@@ -1,0 +1,748 @@
+;; fl-press — FreeLang fx2 CMS (WordPress 호환 메뉴/기능)
+(load "./fx-std.fl")
+
+;; fx2에서 req-param은 동작 안 함 → 직접 params 맵 접근
+(defn rp [$req $key]
+  (get (get $req "params") $key))
+
+(define PORT    40814)
+(define DB_PATH "/home/kimjin/kim/Desktop/kim/01_Active_Projects/fl-press/flpress.db")
+(define UPLOAD_DIR "/home/kimjin/kim/Desktop/kim/01_Active_Projects/fl-press/app/uploads")
+(define SECRET  "fl-press-jwt-secret-2026")
+(define SITE_NAME "FL Press")
+
+;; ═══════════════════════════════════════════════════════════
+;;  DB 초기화
+;; ═══════════════════════════════════════════════════════════
+(define DB (db-open DB_PATH))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT DEFAULT 'subscriber',
+  display_name TEXT,
+  bio TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)" (list))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  slug TEXT UNIQUE,
+  content TEXT,
+  blocks TEXT,
+  excerpt TEXT,
+  status TEXT DEFAULT 'draft',
+  post_type TEXT DEFAULT 'post',
+  author_id INTEGER,
+  category_id INTEGER,
+  featured_image TEXT,
+  view_count INTEGER DEFAULT 0,
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  updated_at INTEGER DEFAULT (strftime('%s','now'))
+)" (list))
+(db-exec DB "ALTER TABLE posts ADD COLUMN blocks TEXT" (list))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE,
+  description TEXT,
+  parent_id INTEGER DEFAULT 0,
+  post_count INTEGER DEFAULT 0
+)" (list))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  slug TEXT UNIQUE
+)" (list))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS post_tags (
+  post_id INTEGER,
+  tag_id INTEGER,
+  PRIMARY KEY(post_id, tag_id)
+)" (list))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id INTEGER,
+  author TEXT NOT NULL,
+  email TEXT,
+  content TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  parent_id INTEGER DEFAULT 0,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)" (list))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS media (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  filename TEXT NOT NULL,
+  original_name TEXT,
+  mime_type TEXT,
+  file_size INTEGER,
+  url TEXT,
+  alt_text TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)" (list))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS options (
+  option_key TEXT PRIMARY KEY,
+  option_value TEXT
+)" (list))
+
+(db-exec DB "CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER,
+  expires_at INTEGER
+)" (list))
+
+;; 기본 데이터 seed
+(db-exec DB "INSERT OR IGNORE INTO users (username, email, password_hash, role, display_name)
+  VALUES ('admin', 'admin@flpress.local', 'admin2026', 'administrator', '관리자')" (list))
+
+(db-exec DB "INSERT OR IGNORE INTO options (option_key, option_value) VALUES
+  ('site_name', 'FL Press'),
+  ('site_description', 'FreeLang fx2로 만든 CMS'),
+  ('site_url', 'http://localhost:40814'),
+  ('posts_per_page', '10'),
+  ('allow_comments', 'true'),
+  ('comment_moderation', 'true')" (list))
+
+(db-exec DB "INSERT OR IGNORE INTO categories (name, slug, description) VALUES
+  ('미분류', 'uncategorized', '기본 카테고리')" (list))
+
+(db-exec DB "INSERT OR IGNORE INTO posts (title, slug, content, status, post_type, author_id, category_id)
+  VALUES ('fl-press에 오신 것을 환영합니다',
+          'welcome-to-fl-press',
+          '## 환영합니다\n\nFreeLang fx2로 만든 CMS입니다.\n\n- 게시물 작성\n- 미디어 업로드\n- 댓글 관리\n- SEO 최적화\n\n**FreeLang fx2** — C 네이티브 바이너리, 330배 빠름.',
+          'published', 'post', 1, 1)" (list))
+
+;; ═══════════════════════════════════════════════════════════
+;;  인증 헬퍼
+;; ═══════════════════════════════════════════════════════════
+(defn now-sec []
+  (to-int (/ (now) 1000)))
+
+(defn now-epoch []
+  (to-int (str-trim (shell-run "date +%s"))))
+
+(defn make-session-token [$user-id]
+  (let [$tok (str "flp_" (str $user-id) "_" (str (now-epoch)) "_" (str-trim (shell-run "openssl rand -hex 8 2>/dev/null || echo x")))]
+    (db-exec DB "INSERT OR REPLACE INTO sessions (token, user_id, expires_at) VALUES (?,?,?)"
+      (list $tok $user-id (+ (now-epoch) 86400)))
+    $tok))
+
+(defn extract-bearer [$auth]
+  (if (str-starts-with $auth "Bearer ")
+    (str-trim (str-slice $auth 7 999))
+    nil))
+
+(defn get-session [$req]
+  (let [$auth (or (get (get $req "headers") "authorization") "")
+        $tok  (extract-bearer $auth)]
+    (if (null? $tok) nil
+      (db-one DB "SELECT s.user_id, s.expires_at, u.username, u.role, u.display_name
+                  FROM sessions s JOIN users u ON s.user_id = u.id
+                  WHERE s.token=? AND s.expires_at > ?" (list $tok (now-epoch))))))
+
+(defn admin? [$req]
+  (let [$sess (get-session $req)]
+    (if (null? $sess) false
+      (let [$role (get $sess "role")]
+        (or (= $role "administrator") (= $role "editor"))))))
+
+(defn logged-in? [$req]
+  (not (null? (get-session $req))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  Markdown → HTML (간단 변환)
+;; ═══════════════════════════════════════════════════════════
+(defn md-to-html [$text]
+  (if (null? $text) ""
+    (let [$t1 (str-replace-re $text "##\\s+" "<h2>")
+          $t2 (str-replace-re $t1  "#\\s+"  "<h1>")
+          $t3 (str-replace-re $t2  "\\*\\*" "<strong>")
+          $t4 (str-replace-re $t3  "\\*"    "<em>")]
+      (str "<div class='md'>" $t4 "</div>"))))
+
+;; slug 생성
+(defn make-slug [$title]
+  (if (null? $title) "post"
+    (str-trim (str-replace (str-lower $title) " " "-"))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  1. 인증 API
+;; ═══════════════════════════════════════════════════════════
+(defn handle-login [$req]
+  (let [$body   (req-body $req)
+        $user   (get $body "username")
+        $pass   (get $body "password")
+        $row    (db-one DB "SELECT id, username, role, display_name FROM users WHERE username=? AND password_hash=?"
+                  (list $user $pass))]
+    (if (null? $row) (err "아이디 또는 비밀번호가 틀립니다")
+      (let [$tok   (make-session-token (get $row "id"))
+            $uname (get $row "username")]
+        (ok {"token" $tok "username" $uname "role" (get $row "role")
+             "display_name" (get $row "display_name")})))))
+
+(defn handle-logout [$req]
+  (let [$sess (get-session $req)]
+    (if (not (null? $sess))
+      (let [$_ (db-exec DB "DELETE FROM sessions WHERE user_id=?" (list (get $sess "user_id")))]
+        (ok {"logged_out" true}))
+      (ok {"logged_out" true}))))
+
+(defn handle-me [$req]
+  (let [$sess (get-session $req)]
+    (if (null? $sess) (err-unauthorized)
+      (ok {"user_id" (get $sess "user_id")
+           "username" (get $sess "username")
+           "role" (get $sess "role")
+           "display_name" (get $sess "display_name")}))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  2. 게시물 API
+;; ═══════════════════════════════════════════════════════════
+(defn handle-posts-list [$req]
+  (let [$status   (or (req-query $req "status") "published")
+        $type     (or (req-query $req "type") "post")
+        $cat-id   (req-query $req "category")
+        $page     (or (to-int (or (req-query $req "page") "1")) 1)
+        $per-page 20
+        $offset   (* (- $page 1) $per-page)
+        $rows (if (null? $cat-id)
+                (db-query DB "SELECT p.id, p.title, p.slug, p.status, p.post_type,
+                                p.excerpt, p.featured_image, p.view_count,
+                                p.created_at, p.updated_at,
+                                u.display_name as author_name,
+                                c.name as category_name
+                              FROM posts p
+                              LEFT JOIN users u ON p.author_id = u.id
+                              LEFT JOIN categories c ON p.category_id = c.id
+                              WHERE p.status=? AND p.post_type=?
+                              ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+                  (list $status $type $per-page $offset))
+                (db-query DB "SELECT p.id, p.title, p.slug, p.status, p.post_type,
+                                p.excerpt, p.featured_image, p.view_count,
+                                p.created_at, p.updated_at,
+                                u.display_name as author_name,
+                                c.name as category_name
+                              FROM posts p
+                              LEFT JOIN users u ON p.author_id = u.id
+                              LEFT JOIN categories c ON p.category_id = c.id
+                              WHERE p.status=? AND p.post_type=? AND p.category_id=?
+                              ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+                  (list $status $type $cat-id $per-page $offset)))
+        $total-row (db-one DB "SELECT COUNT(*) as cnt FROM posts WHERE status=? AND post_type=?"
+                     (list $status $type))]
+    (ok {"posts" $rows "total" (get $total-row "cnt") "page" $page "per_page" $per-page})))
+
+(defn handle-post-get [$req]
+  (let [$id  (rp $req "id")
+        $row (db-one DB "SELECT p.*, u.display_name as author_name, u.username,
+                                c.name as category_name
+                         FROM posts p
+                         LEFT JOIN users u ON p.author_id = u.id
+                         LEFT JOIN categories c ON p.category_id = c.id
+                         WHERE p.id=?" (list $id))]
+    (if (null? $row) (err-not-found)
+      (let [$tags (db-query DB "SELECT t.name, t.slug FROM tags t
+                                JOIN post_tags pt ON t.id = pt.tag_id
+                                WHERE pt.post_id=?" (list $id))
+            $comment-count (db-one DB "SELECT COUNT(*) as cnt FROM comments WHERE post_id=? AND status='approved'"
+                             (list $id))]
+        (ok {"post" $row "tags" $tags "comment_count" (get $comment-count "cnt")})))))
+
+(defn handle-post-create [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$sess     (get-session $req)
+          $body     (req-body $req)
+          $title    (get $body "title")
+          $content  (get $body "content")
+          $blocks   (get $body "blocks")
+          $status   (or (get $body "status") "draft")
+          $type     (or (get $body "post_type") "post")
+          $cat-id   (or (get $body "category_id") 1)
+          $excerpt  (or (get $body "excerpt") "")
+          $img      (or (get $body "featured_image") "")
+          $raw-slug (or (get $body "slug") $title)
+          $slug     (make-slug $raw-slug)
+          $author-id (get $sess "user_id")]
+      (if (null? $title) (err "제목 필요")
+        (let [$_ (db-exec DB "INSERT INTO posts (title, slug, content, blocks, excerpt, status, post_type,
+                                author_id, category_id, featured_image)
+                              VALUES (?,?,?,?,?,?,?,?,?,?)"
+                   (list $title $slug $content $blocks $excerpt $status $type
+                         $author-id $cat-id $img))
+              $new-id (db-one DB "SELECT last_insert_rowid() as id" (list))]
+          (ok {"id" (get $new-id "id") "slug" $slug "status" $status}))))))
+
+(defn handle-post-update [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$id      (or (get (get $req "params") "id") "0")
+          $body    (req-body $req)
+          $title   (get $body "title")
+          $content (get $body "content")
+          $blocks  (get $body "blocks")
+          $status  (or (get $body "status") "draft")
+          $cat-id  (or (get $body "category_id") 1)
+          $excerpt (or (get $body "excerpt") "")
+          $img     (or (get $body "featured_image") "")]
+      (db-exec DB "UPDATE posts SET title=?, content=?, blocks=?, excerpt=?, status=?,
+                   category_id=?, featured_image=?,
+                   updated_at=strftime('%s','now')
+                   WHERE id=?"
+        (list $title $content $blocks $excerpt $status $cat-id $img $id))
+      (ok {"id" $id "updated" true}))))
+
+(defn handle-post-delete [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$id (rp $req "id")
+          $_ (db-exec DB "DELETE FROM posts WHERE id=?" (list $id))
+          $__ (db-exec DB "DELETE FROM post_tags WHERE post_id=?" (list $id))
+          $___ (db-exec DB "DELETE FROM comments WHERE post_id=?" (list $id))]
+      (ok {"id" $id "deleted" true}))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  3. 페이지 API (post_type='page')
+;; ═══════════════════════════════════════════════════════════
+(defn handle-pages-list [$req]
+  (let [$rows (db-query DB "SELECT id, title, slug, status, created_at, updated_at
+                             FROM posts WHERE post_type='page'
+                             ORDER BY created_at DESC" (list))]
+    (ok {"pages" $rows})))
+
+(defn handle-page-create [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$sess    (get-session $req)
+          $body    (req-body $req)
+          $title   (get $body "title")
+          $content (get $body "content")
+          $status  (or (get $body "status") "draft")
+          $slug    (make-slug (or (get $body "slug") $title))
+          $author-id (get $sess "user_id")]
+      (db-exec DB "INSERT INTO posts (title, slug, content, status, post_type, author_id)
+                   VALUES (?,?,?,?,'page',?)"
+        (list $title $slug $content $status $author-id))
+      (let [$new-id (db-one DB "SELECT last_insert_rowid() as id" (list))]
+        (ok {"id" (get $new-id "id") "slug" $slug})))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  4. 카테고리 API
+;; ═══════════════════════════════════════════════════════════
+(defn handle-cats-list [$req]
+  (let [$rows (db-query DB "SELECT c.id, c.name, c.slug, c.description, c.parent_id,
+                                    COUNT(p.id) as post_count
+                             FROM categories c
+                             LEFT JOIN posts p ON p.category_id = c.id AND p.status='published'
+                             GROUP BY c.id ORDER BY c.name" (list))]
+    (ok {"categories" $rows})))
+
+(defn handle-cat-create [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$body (req-body $req)
+          $name (get $body "name")
+          $slug (make-slug (or (get $body "slug") $name))
+          $desc (or (get $body "description") "")
+          $parent (or (get $body "parent_id") 0)]
+      (db-exec DB "INSERT OR IGNORE INTO categories (name, slug, description, parent_id) VALUES (?,?,?,?)"
+        (list $name $slug $desc $parent))
+      (ok {"name" $name "slug" $slug}))))
+
+(defn handle-cat-delete [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$id (rp $req "id")
+          $_ (db-exec DB "UPDATE posts SET category_id=1 WHERE category_id=?" (list $id))
+          $__ (db-exec DB "DELETE FROM categories WHERE id=? AND id!=1" (list $id))]
+      (ok {"id" $id "deleted" true}))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  5. 태그 API
+;; ═══════════════════════════════════════════════════════════
+(defn handle-tags-list [$req]
+  (let [$rows (db-query DB "SELECT t.id, t.name, t.slug, COUNT(pt.post_id) as post_count
+                             FROM tags t
+                             LEFT JOIN post_tags pt ON t.id = pt.tag_id
+                             GROUP BY t.id ORDER BY post_count DESC" (list))]
+    (ok {"tags" $rows})))
+
+(defn handle-tag-create [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$body (req-body $req)
+          $name (get $body "name")
+          $slug (make-slug (or (get $body "slug") $name))]
+      (db-exec DB "INSERT OR IGNORE INTO tags (name, slug) VALUES (?,?)" (list $name $slug))
+      (let [$row (db-one DB "SELECT id FROM tags WHERE name=?" (list $name))]
+        (ok {"id" (get $row "id") "name" $name "slug" $slug})))))
+
+(defn handle-post-tag [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$post-id (rp $req "id")
+          $body    (req-body $req)
+          $tag-id  (get $body "tag_id")]
+      (db-exec DB "INSERT OR IGNORE INTO post_tags (post_id, tag_id) VALUES (?,?)"
+        (list $post-id $tag-id))
+      (ok {"post_id" $post-id "tag_id" $tag-id}))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  6. 댓글 API
+;; ═══════════════════════════════════════════════════════════
+(defn handle-comments-list [$req]
+  (let [$post-id (req-query $req "post_id")
+        $status  (or (req-query $req "status") "approved")
+        $rows (if (null? $post-id)
+                (db-query DB "SELECT c.*, p.title as post_title
+                               FROM comments c
+                               LEFT JOIN posts p ON c.post_id = p.id
+                               WHERE c.status=?
+                               ORDER BY c.created_at DESC LIMIT 50" (list $status))
+                (db-query DB "SELECT * FROM comments WHERE post_id=? AND status=?
+                              ORDER BY created_at ASC" (list $post-id $status)))]
+    (ok {"comments" $rows})))
+
+(defn handle-comment-create [$req]
+  (let [$body    (req-body $req)
+        $post-id (get $body "post_id")
+        $author  (get $body "author")
+        $email   (or (get $body "email") "")
+        $content (get $body "content")
+        $parent  (or (get $body "parent_id") 0)
+        $status  (if (admin? $req) "approved" "pending")]
+    (if (or (null? $author) (null? $content)) (err "작성자/내용 필요")
+      (let [$_ (db-exec DB "INSERT INTO comments (post_id, author, email, content, status, parent_id)
+                             VALUES (?,?,?,?,?,?)"
+                 (list $post-id $author $email $content $status $parent))
+            $new-id (db-one DB "SELECT last_insert_rowid() as id" (list))]
+        (ok {"id" (get $new-id "id") "status" $status})))))
+
+(defn handle-comment-approve [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$id (rp $req "id")
+          $_ (db-exec DB "UPDATE comments SET status='approved' WHERE id=?" (list $id))]
+      (ok {"id" $id "approved" true}))))
+
+(defn handle-comment-delete [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$id (rp $req "id")
+          $_ (db-exec DB "DELETE FROM comments WHERE id=?" (list $id))]
+      (ok {"id" $id "deleted" true}))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  7. 사용자 API
+;; ═══════════════════════════════════════════════════════════
+(defn handle-users-list [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$rows (db-query DB "SELECT id, username, email, role, display_name, created_at
+                               FROM users ORDER BY created_at DESC" (list))]
+      (ok {"users" $rows}))))
+
+(defn handle-user-create [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$body    (req-body $req)
+          $user    (get $body "username")
+          $email   (get $body "email")
+          $pass    (get $body "password")
+          $role    (or (get $body "role") "author")
+          $dname   (or (get $body "display_name") $user)]
+      (if (or (null? $user) (null? $email) (null? $pass)) (err "필드 누락")
+        (let [$_ (db-exec DB "INSERT INTO users (username, email, password_hash, role, display_name)
+                               VALUES (?,?,?,?,?)"
+                   (list $user $email $pass $role $dname))
+              $new-id (db-one DB "SELECT last_insert_rowid() as id" (list))]
+          (ok {"id" (get $new-id "id") "username" $user "role" $role}))))))
+
+(defn handle-user-update [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$id   (rp $req "id")
+          $body (req-body $req)
+          $role  (get $body "role")
+          $dname (get $body "display_name")
+          $email (get $body "email")]
+      (db-exec DB "UPDATE users SET role=?, display_name=?, email=? WHERE id=?"
+        (list $role $dname $email $id))
+      (ok {"id" $id "updated" true}))))
+
+(defn handle-user-delete [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$id (rp $req "id")
+          $check (db-one DB "SELECT role FROM users WHERE id=?" (list $id))]
+      (if (= (get $check "role") "administrator") (err "관리자 삭제 불가")
+        (let [$_ (db-exec DB "DELETE FROM users WHERE id=?" (list $id))]
+          (ok {"id" $id "deleted" true}))))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  8. 미디어 API
+;; ═══════════════════════════════════════════════════════════
+(defn handle-media-list [$req]
+  (let [$rows (db-query DB "SELECT * FROM media ORDER BY created_at DESC LIMIT 100" (list))]
+    (ok {"media" $rows})))
+
+(defn handle-media-delete [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$id  (rp $req "id")
+          $row (db-one DB "SELECT filename FROM media WHERE id=?" (list $id))]
+      (if (not (null? $row))
+        (let [$_ (shell-run (str "rm -f " UPLOAD_DIR "/" (get $row "filename") " 2>/dev/null"))
+              $__ (db-exec DB "DELETE FROM media WHERE id=?" (list $id))]
+          (ok {"id" $id "deleted" true}))
+        (err-not-found)))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  9. 설정 API
+;; ═══════════════════════════════════════════════════════════
+(defn handle-settings-get [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$rows (db-query DB "SELECT option_key, option_value FROM options" (list))
+          $map  (reduce (fn [$acc $r]
+                          (assoc $acc (get $r "option_key") (get $r "option_value")))
+                  {} $rows)]
+      (ok $map))))
+
+(defn handle-settings-update [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$body (req-body $req)
+          $keys (keys $body)]
+      (map (fn [$k]
+             (db-exec DB "INSERT OR REPLACE INTO options (option_key, option_value) VALUES (?,?)"
+               (list $k (get $body $k))))
+           $keys)
+      (ok {"updated" true}))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  10. 대시보드 통계
+;; ═══════════════════════════════════════════════════════════
+(defn handle-dashboard [$req]
+  (if (not (admin? $req)) (err-unauthorized)
+    (let [$post-cnt  (db-one DB "SELECT COUNT(*) as cnt FROM posts WHERE post_type='post'" (list))
+          $pub-cnt   (db-one DB "SELECT COUNT(*) as cnt FROM posts WHERE status='published' AND post_type='post'" (list))
+          $draft-cnt (db-one DB "SELECT COUNT(*) as cnt FROM posts WHERE status='draft' AND post_type='post'" (list))
+          $page-cnt  (db-one DB "SELECT COUNT(*) as cnt FROM posts WHERE post_type='page'" (list))
+          $comment-cnt (db-one DB "SELECT COUNT(*) as cnt FROM comments" (list))
+          $pending-cnt (db-one DB "SELECT COUNT(*) as cnt FROM comments WHERE status='pending'" (list))
+          $user-cnt  (db-one DB "SELECT COUNT(*) as cnt FROM users" (list))
+          $media-cnt (db-one DB "SELECT COUNT(*) as cnt FROM media" (list))
+          $recent-posts (db-query DB "SELECT id,title,status,created_at FROM posts
+                                      WHERE post_type='post'
+                                      ORDER BY created_at DESC LIMIT 5" (list))
+          $recent-comments (db-query DB "SELECT id,author,content,status,created_at FROM comments
+                                         ORDER BY created_at DESC LIMIT 5" (list))]
+      (ok {"posts" {"total" (get $post-cnt "cnt")
+                    "published" (get $pub-cnt "cnt")
+                    "draft" (get $draft-cnt "cnt")}
+           "pages" (get $page-cnt "cnt")
+           "comments" {"total" (get $comment-cnt "cnt")
+                       "pending" (get $pending-cnt "cnt")}
+           "users" (get $user-cnt "cnt")
+           "media" (get $media-cnt "cnt")
+           "recent_posts" $recent-posts
+           "recent_comments" $recent-comments}))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  11. SEO — sitemap.xml / robots.txt
+;; ═══════════════════════════════════════════════════════════
+(defn handle-sitemap [$req]
+  (let [$site-url (or (get (db-one DB "SELECT option_value FROM options WHERE option_key='site_url'" (list)) "option_value") "http://localhost:40814")
+        $posts (db-query DB "SELECT slug, updated_at FROM posts WHERE status='published' ORDER BY updated_at DESC" (list))
+        $urls  (map (fn [$p]
+                      (str "  <url><loc>" $site-url "/" (get $p "slug") "</loc>"
+                           "<lastmod>" (get $p "updated_at") "</lastmod>"
+                           "<changefreq>weekly</changefreq><priority>0.8</priority></url>"))
+                    $posts)
+        $xml   (str "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                    "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n"
+                    "  <url><loc>" $site-url "</loc><priority>1.0</priority></url>\n"
+                    (reduce (fn [$a $b] (str $a "\n" $b)) "" $urls)
+                    "\n</urlset>")]
+    (server_html $xml)))
+
+(defn handle-robots [$req]
+  (let [$site-url (or (get (db-one DB "SELECT option_value FROM options WHERE option_key='site_url'" (list)) "option_value") "http://localhost:40814")]
+    (server_html (str "User-agent: *\nAllow: /\n\nSitemap: " $site-url "/sitemap.xml\n"))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  12. 퍼블릭 뷰 (블로그 프론트)
+;; ═══════════════════════════════════════════════════════════
+
+(define PUBLIC_CSS "<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fa;color:#333;line-height:1.7}.wrap{max-width:780px;margin:0 auto;padding:40px 20px}header{background:#1a1a2e;color:#fff;padding:16px 0;margin-bottom:32px}header .inner{max-width:780px;margin:0 auto;padding:0 20px;display:flex;justify-content:space-between;align-items:center}header a{color:#fff;text-decoration:none;font-weight:600;font-size:20px}header nav a{font-size:14px;margin-left:16px;opacity:.8}.post-title{font-size:32px;font-weight:700;margin-bottom:12px}.post-meta{font-size:13px;color:#666;margin-bottom:24px}.cat-badge{background:#e8f4fd;color:#0366d6;padding:2px 8px;border-radius:12px;font-size:12px}.post-content{background:#fff;border-radius:8px;padding:32px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:32px}.comments{background:#fff;border-radius:8px;padding:24px;box-shadow:0 1px 4px rgba(0,0,0,.08)}.comments h3{font-size:18px;margin-bottom:16px;border-bottom:1px solid #eee;padding-bottom:12px}.comment{padding:14px 0;border-bottom:1px solid #f0f0f0}.comment-author{font-weight:600;font-size:12px;color:#888;margin-bottom:4px}.comment-form{margin-top:20px;background:#f8f9fa;padding:16px;border-radius:8px}.form-group{margin-bottom:10px}.form-group label{display:block;font-size:12px;margin-bottom:3px;color:#666}.form-group input,.form-group textarea{width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px}.form-group textarea{height:80px}.btn{padding:8px 18px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px}</style>")
+
+(define HOME_CSS "<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fa;color:#333;line-height:1.6}header{background:#1a1a2e;color:#fff;padding:20px 0;margin-bottom:40px}header .inner{max-width:900px;margin:0 auto;padding:0 20px}header h1{font-size:26px;font-weight:700;margin-bottom:4px}header p{opacity:.7;font-size:14px}header nav{margin-top:10px}header nav a{color:#fff;text-decoration:none;margin-right:16px;font-size:14px;opacity:.8}.wrap{max-width:900px;margin:0 auto;padding:0 20px 60px}.post-card{background:#fff;border-radius:10px;padding:28px;margin-bottom:24px;box-shadow:0 1px 4px rgba(0,0,0,.08)}.post-card h2{font-size:22px;margin-bottom:8px}.post-card h2 a{color:#1a1a2e;text-decoration:none}.post-meta{font-size:12px;color:#888;margin-bottom:12px}.post-meta span{margin-right:12px}.cat-badge{background:#e8f4fd;color:#0366d6;padding:1px 7px;border-radius:10px}.excerpt{color:#555;font-size:15px;margin-bottom:14px}.read-more{color:#0366d6;font-size:13px;text-decoration:none}</style>")
+
+(define COMMENT_JS "<script>async function submitComment(postId){const r=await fetch('/api/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_id:postId,author:document.getElementById('cm-author').value,email:document.getElementById('cm-email').value,content:document.getElementById('cm-content').value})});const d=await r.json();if(d.ok)alert('댓글이 등록되었습니다. 승인 후 표시됩니다.');else alert('오류: '+d.error);}</script>")
+
+(defn render-comment-html [$c]
+  (str "<div class='comment'><div class='comment-author'>"
+       (get $c "author")
+       "</div><p>" (get $c "content") "</p></div>"))
+
+(defn render-comments-html [$post-id $comments]
+  (str "<div class='comments'><h3>댓글 (" (str (length $comments)) ")</h3>"
+       (reduce (fn [$acc $c] (str $acc (render-comment-html $c))) "" $comments)
+       "<div class='comment-form'><h4 style='margin-bottom:12px'>댓글 작성</h4>"
+       "<div class='form-group'><label>이름</label><input type='text' id='cm-author'/></div>"
+       "<div class='form-group'><label>이메일</label><input type='email' id='cm-email'/></div>"
+       "<div class='form-group'><label>내용</label><textarea id='cm-content'></textarea></div>"
+       "<button class='btn' onclick='submitComment(" (str $post-id) ")'>댓글 등록</button>"
+       "</div></div>"))
+
+(defn render-post-page [$post $comments]
+  (let [$title   (get $post "title")
+        $content (md-to-html (or (get $post "content") ""))
+        $author  (or (get $post "author_name") "관리자")
+        $cat     (or (get $post "category_name") "미분류")
+        $post-id (get $post "id")]
+    (str "<!DOCTYPE html><html lang='ko'><head><meta charset='UTF-8'>"
+         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+         "<title>" $title " — FL Press</title>"
+         PUBLIC_CSS
+         "</head><body>"
+         "<header><div class='inner'><a href='/'>FL Press</a><nav><a href='/'>홈</a><a href='/admin'>관리자</a></nav></div></header>"
+         "<div class='wrap'>"
+         "<h1 class='post-title'>" $title "</h1>"
+         "<div class='post-meta'><span>✍️ " $author "</span><span class='cat-badge'>" $cat "</span></div>"
+         "<div class='post-content'>" $content "</div>"
+         (render-comments-html $post-id $comments)
+         "</div>"
+         COMMENT_JS
+         "</body></html>")))
+
+(defn handle-public-post [$req]
+  (let [$raw-slug (or (get (get $req "params") "slug") "")
+        $slug     (url-decode $raw-slug)
+        $post (db-one DB "SELECT p.*, u.display_name as author_name, c.name as category_name
+                           FROM posts p
+                           LEFT JOIN users u ON p.author_id = u.id
+                           LEFT JOIN categories c ON p.category_id = c.id
+                           WHERE p.slug=? AND p.status='published'" (list $slug))]
+    (if (null? $post) (err-not-found)
+      (let [$post-id  (get $post "id")
+            $_        (db-exec DB "UPDATE posts SET view_count=view_count+1 WHERE id=?" (list $post-id))
+            $comments (db-query DB "SELECT * FROM comments WHERE post_id=? AND status='approved' ORDER BY created_at ASC" (list $post-id))]
+        (server_html (render-post-page $post $comments))))))
+
+(defn render-post-card [$p]
+  (str "<article class='post-card'>"
+       "<h2><a href='/" (get $p "slug") "'>" (get $p "title") "</a></h2>"
+       "<div class='post-meta'>"
+       "<span>✍️ " (or (get $p "author_name") "관리자") "</span>"
+       "<span class='cat-badge'>" (or (get $p "category_name") "미분류") "</span>"
+       "<span>👁 " (str (or (get $p "view_count") 0)) "</span>"
+       "</div>"
+       "<p class='excerpt'>" (or (get $p "excerpt") "") "</p>"
+       "<a href='/" (get $p "slug") "' class='read-more'>더 읽기 →</a>"
+       "</article>"))
+
+(defn handle-public-home [$req]
+  (let [$posts (db-query DB "SELECT p.id, p.title, p.slug, p.excerpt, p.created_at,
+                                     p.view_count, u.display_name as author_name,
+                                     c.name as category_name
+                              FROM posts p
+                              LEFT JOIN users u ON p.author_id = u.id
+                              LEFT JOIN categories c ON p.category_id = c.id
+                              WHERE p.status='published' AND p.post_type='post'
+                              ORDER BY p.created_at DESC LIMIT 10" (list))
+        $sname-row (db-one DB "SELECT option_value FROM options WHERE option_key='site_name'" (list))
+        $sdesc-row (db-one DB "SELECT option_value FROM options WHERE option_key='site_description'" (list))
+        $site-name (or (get $sname-row "option_value") "FL Press")
+        $site-desc (or (get $sdesc-row "option_value") "")
+        $cards (reduce (fn [$acc $p] (str $acc (render-post-card $p))) "" $posts)
+        $empty (if (= (length $posts) 0) "<p style='text-align:center;color:#888;padding:60px 0'>아직 게시물이 없습니다.</p>" "")]
+    (server_html (str "<!DOCTYPE html><html lang='ko'><head><meta charset='UTF-8'>"
+                      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                      "<title>" $site-name "</title>"
+                      HOME_CSS
+                      "</head><body>"
+                      "<header><div class='inner'><h1>" $site-name "</h1>"
+                      "<p>" $site-desc "</p>"
+                      "<nav><a href='/'>홈</a><a href='/admin'>관리자 ⚙️</a></nav></div></header>"
+                      "<div class='wrap'>" $cards $empty "</div>"
+                      "</body></html>"))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  13. 관리자 SPA 서빙
+;; ═══════════════════════════════════════════════════════════
+(defn handle-admin [$req]
+  (server_html (fl-file-read "app/admin.html")))
+
+(defn handle-static [$req]
+  (let [$path (rp $req "path")
+        $file (str "app/" $path)]
+    (server_html (fl-file-read $file))))
+
+;; 업로드 파일 서빙
+(defn handle-upload-file [$req]
+  (let [$fname (rp $req "filename")
+        $fpath (str UPLOAD_DIR "/" $fname)]
+    (server_html (fl-file-read $fpath))))
+
+;; ═══════════════════════════════════════════════════════════
+;;  라우트 등록
+;; ═══════════════════════════════════════════════════════════
+
+;; 인증
+(server-post "/api/auth/login"   (fn [$r] (handle-login $r)))
+(server-post "/api/auth/logout"  (fn [$r] (handle-logout $r)))
+(server-get  "/api/me"           (fn [$r] (handle-me $r)))
+
+;; 대시보드
+(server-get  "/api/dashboard"    (fn [$r] (handle-dashboard $r)))
+
+;; 게시물
+(server-get  "/api/posts"        (fn [$r] (handle-posts-list $r)))
+(server-get  "/api/posts/:id"    (fn [$r] (handle-post-get $r)))
+(server-post "/api/posts"        (fn [$r] (handle-post-create $r)))
+(server-post "/api/posts/:id"    (fn [$r] (handle-post-update $r)))
+(server-post "/api/posts/:id/delete" (fn [$r] (handle-post-delete $r)))
+(server-post "/api/posts/:id/tags"   (fn [$r] (handle-post-tag $r)))
+
+;; 페이지
+(server-get  "/api/pages"        (fn [$r] (handle-pages-list $r)))
+(server-post "/api/pages"        (fn [$r] (handle-page-create $r)))
+(server-post "/api/pages/:id"    (fn [$r] (handle-post-update $r)))
+(server-post "/api/pages/:id/delete" (fn [$r] (handle-post-delete $r)))
+
+;; 카테고리 / 태그
+(server-get  "/api/categories"   (fn [$r] (handle-cats-list $r)))
+(server-post "/api/categories"   (fn [$r] (handle-cat-create $r)))
+(server-post "/api/categories/:id/delete" (fn [$r] (handle-cat-delete $r)))
+(server-get  "/api/tags"         (fn [$r] (handle-tags-list $r)))
+(server-post "/api/tags"         (fn [$r] (handle-tag-create $r)))
+
+;; 댓글
+(server-get  "/api/comments"     (fn [$r] (handle-comments-list $r)))
+(server-post "/api/comments"     (fn [$r] (handle-comment-create $r)))
+(server-post "/api/comments/:id/approve" (fn [$r] (handle-comment-approve $r)))
+(server-post "/api/comments/:id/delete"  (fn [$r] (handle-comment-delete $r)))
+
+;; 사용자
+(server-get  "/api/users"        (fn [$r] (handle-users-list $r)))
+(server-post "/api/users"        (fn [$r] (handle-user-create $r)))
+(server-post "/api/users/:id"    (fn [$r] (handle-user-update $r)))
+(server-post "/api/users/:id/delete" (fn [$r] (handle-user-delete $r)))
+
+;; 미디어
+(server-get  "/api/media"        (fn [$r] (handle-media-list $r)))
+(server-post "/api/media/:id/delete" (fn [$r] (handle-media-delete $r)))
+
+;; 설정
+(server-get  "/api/settings"     (fn [$r] (handle-settings-get $r)))
+(server-post "/api/settings"     (fn [$r] (handle-settings-update $r)))
+
+;; SEO
+(server-get  "/sitemap.xml"      (fn [$r] (handle-sitemap $r)))
+(server-get  "/robots.txt"       (fn [$r] (handle-robots $r)))
+
+;; 관리자 SPA
+(server-get  "/admin"            (fn [$r] (handle-admin $r)))
+
+;; 업로드 파일
+(server-get  "/uploads/:filename" (fn [$r] (handle-upload-file $r)))
+
+;; 퍼블릭 — 반드시 마지막에
+(server-get  "/:slug"            (fn [$r] (handle-public-post $r)))
+
+(server-get  "/"                 (fn [$r] (handle-public-home $r)))
+
+(server_start PORT)

@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FL Press 관리자</title>
+<style>
+/* ── 리셋 */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #1e1e2e; --sidebar-bg: #13131f; --card-bg: #252535;
+  --border: #2e2e45; --text: #cdd6f4; --muted: #6c7086; --accent: #89b4fa;
+  --green: #a6e3a1; --yellow: #f9e2af; --red: #f38ba8; --purple: #cba6f7;
+  --pink: #f5c2e7; --sky: #89dceb;
+  --sidebar-w: 240px; --topbar-h: 52px;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+/* ── 레이아웃 */
+#login-screen { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+#app { display:none; height:100vh; overflow:hidden; }
+.layout { display:flex; height:100vh; }
+
+/* ── 사이드바 */
+.sidebar {
+  width: var(--sidebar-w); background: var(--sidebar-bg); border-right: 1px solid var(--border);
+  display:flex; flex-direction:column; overflow-y:auto; flex-shrink:0;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+.sidebar-brand {
+  padding: 20px 16px 16px; border-bottom: 1px solid var(--border);
+  display:flex; align-items:center; gap:10px;
+}
+.brand-icon { width:32px; height:32px; background: linear-gradient(135deg,#89b4fa,#cba6f7);
+              border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; }
+.brand-name { font-size:15px; font-weight:700; color:#fff; }
+.brand-sub  { font-size:10px; color:var(--muted); }
+
+.nav-section-label {
+  padding: 12px 16px 4px; font-size:10px; font-weight:700; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.08em;
+}
+.nav-item {
+  display:flex; align-items:center; gap:8px; padding:8px 16px;
+  cursor:pointer; color:var(--muted); transition:.15s; border-radius:6px; margin:1px 6px;
+  font-size:13.5px;
+}
+.nav-item:hover  { background:rgba(137,180,250,.08); color:var(--text); }
+.nav-item.active { background:rgba(137,180,250,.14); color:var(--accent); }
+.nav-item .icon  { width:18px; text-align:center; font-size:14px; }
+.nav-item .badge { margin-left:auto; background:var(--red); color:#fff; font-size:10px;
+                   padding:1px 6px; border-radius:10px; font-weight:600; }
+.nav-sep { height:1px; background:var(--border); margin:8px 12px; }
+.nav-item-sub { padding-left:38px; font-size:12.5px; }
+
+/* ── 상단바 */
+.topbar {
+  height: var(--topbar-h); background: var(--sidebar-bg); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; padding:0 20px;
+}
+.topbar-left { display:flex; align-items:center; gap:12px; }
+.topbar-title { font-size:15px; font-weight:600; color:#fff; }
+.topbar-right { display:flex; align-items:center; gap:8px; }
+
+/* ── 메인 */
+.main-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.main-content { flex:1; overflow-y:auto; padding:24px; scrollbar-width:thin;
+                scrollbar-color:var(--border) transparent; }
+
+/* ── 섹션 */
+.section { display:none; }
+.section.active { display:block; }
+
+/* ── 카드 */
+.card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px;
+        padding:20px; margin-bottom:20px; }
+.card-title { font-size:14px; font-weight:600; color:var(--text); margin-bottom:16px;
+              display:flex; align-items:center; gap:8px; }
+
+/* ── 통계 카드 */
+.stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+.stat-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px;
+             padding:16px; display:flex; flex-direction:column; gap:6px; }
+.stat-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.stat-value { font-size:28px; font-weight:700; color:var(--text); }
+.stat-sub   { font-size:11px; color:var(--muted); }
+.stat-icon  { font-size:22px; margin-bottom:4px; }
+
+/* ── 테이블 */
+.table-wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { text-align:left; padding:10px 14px; background:rgba(255,255,255,.03);
+     color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase;
+     border-bottom:1px solid var(--border); }
+td { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.04); vertical-align:middle; }
+tr:hover td { background:rgba(255,255,255,.02); }
+
+/* ── 배지 */
+.badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:12px;
+         font-size:11px; font-weight:600; }
+.badge-green  { background:rgba(166,227,161,.15); color:var(--green); }
+.badge-yellow { background:rgba(249,226,175,.15); color:var(--yellow); }
+.badge-red    { background:rgba(243,139,168,.15); color:var(--red); }
+.badge-blue   { background:rgba(137,180,250,.15); color:var(--accent); }
+.badge-purple { background:rgba(203,166,247,.15); color:var(--purple); }
+
+/* ── 폼 */
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.form-group { margin-bottom:14px; }
+.form-group label { display:block; font-size:12px; color:var(--muted); margin-bottom:5px; font-weight:500; }
+.form-control {
+  width:100%; padding:8px 12px; background:#1a1a2e; border:1px solid var(--border);
+  border-radius:6px; color:var(--text); font-size:13px; outline:none; transition:.15s;
+}
+.form-control:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(137,180,250,.2); }
+select.form-control option { background:#1a1a2e; }
+textarea.form-control { resize:vertical; min-height:80px; font-family:inherit; }
+
+/* ── 버튼 */
+.btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border:none;
+       border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; transition:.15s;
+       text-decoration:none; }
+.btn:hover { opacity:.85; transform:translateY(-1px); }
+.btn:active { transform:none; }
+.btn-primary { background:var(--accent); color:#1e1e2e; }
+.btn-success { background:var(--green); color:#1e1e2e; }
+.btn-danger  { background:var(--red); color:#1e1e2e; }
+.btn-warn    { background:var(--yellow); color:#1e1e2e; }
+.btn-ghost   { background:rgba(255,255,255,.06); color:var(--text); }
+.btn-sm      { padding:4px 10px; font-size:12px; }
+.btn-xs      { padding:2px 7px; font-size:11px; }
+
+/* ── 에디터 */
+.editor-wrap { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.editor-toolbar {
+  background:#13131f; padding:8px 12px; display:flex; gap:4px; flex-wrap:wrap;
+  border-bottom:1px solid var(--border);
+}
+.editor-toolbar button {
+  padding:5px 9px; background:rgba(255,255,255,.06); border:none; border-radius:5px;
+  color:var(--text); font-size:12px; cursor:pointer; transition:.15s;
+}
+.editor-toolbar button:hover { background:rgba(137,180,250,.2); color:var(--accent); }
+.editor-toolbar .sep { width:1px; background:var(--border); margin:0 4px; }
+#editor-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); background:#13131f; }
+.editor-tab { padding:8px 16px; cursor:pointer; font-size:12px; color:var(--muted); border-bottom:2px solid transparent; }
+.editor-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+#editor-input {
+  width:100%; min-height:380px; padding:16px; background:#1a1a2e; color:var(--text);
+  border:none; outline:none; font-family:'Fira Code','Consolas',monospace; font-size:13.5px;
+  line-height:1.7; resize:vertical;
+}
+#editor-preview { min-height:380px; padding:16px; background:#1a1a2e; display:none;
+                  line-height:1.8; }
+#editor-preview h1 { font-size:24px; margin:16px 0 8px; }
+#editor-preview h2 { font-size:20px; margin:14px 0 6px; }
+#editor-preview p  { margin-bottom:12px; }
+#editor-preview strong { font-weight:700; }
+#editor-preview em { font-style:italic; }
+#editor-preview li { margin-left:20px; margin-bottom:4px; }
+#editor-preview code { background:#252535; padding:1px 5px; border-radius:3px; font-family:monospace; }
+#editor-preview pre { background:#252535; padding:12px; border-radius:6px; margin:12px 0; overflow-x:auto; }
+.editor-statusbar { background:#13131f; padding:4px 12px; font-size:11px; color:var(--muted); display:flex; gap:16px; }
+
+/* ── 미디어 그리드 */
+.media-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:12px; }
+.media-item { background:var(--card-bg); border:1px solid var(--border); border-radius:8px;
+              overflow:hidden; cursor:pointer; transition:.15s; }
+.media-item:hover { border-color:var(--accent); }
+.media-thumb { width:100%; height:90px; object-fit:cover; background:#252535;
+               display:flex; align-items:center; justify-content:center; font-size:28px; }
+.media-name { padding:6px 8px; font-size:11px; color:var(--muted); white-space:nowrap;
+              overflow:hidden; text-overflow:ellipsis; }
+
+/* ── 업로드 드롭존 */
+.dropzone { border:2px dashed var(--border); border-radius:10px; padding:40px;
+            text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+.dropzone:hover, .dropzone.drag-over { border-color:var(--accent); color:var(--accent); }
+.dropzone .dz-icon { font-size:36px; margin-bottom:12px; }
+.dropzone .dz-text { font-size:14px; }
+.dropzone .dz-sub  { font-size:12px; margin-top:6px; }
+
+/* ── 댓글 */
+.comment-item { padding:14px; border-bottom:1px solid var(--border); display:flex; gap:12px; }
+.comment-avatar { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#89b4fa,#cba6f7);
+                  display:flex; align-items:center; justify-content:center; font-weight:600; flex-shrink:0; }
+.comment-body { flex:1; }
+.comment-meta { font-size:11px; color:var(--muted); margin-bottom:4px; }
+.comment-content { font-size:13px; }
+.comment-post { font-size:11px; color:var(--accent); margin-top:4px; }
+.comment-actions { display:flex; gap:6px; margin-top:8px; }
+
+/* ── 모달 */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none;
+                 align-items:center; justify-content:center; z-index:1000; }
+.modal-overlay.open { display:flex; }
+.modal { background:var(--card-bg); border:1px solid var(--border); border-radius:12px;
+         padding:24px; width:480px; max-width:90vw; max-height:80vh; overflow-y:auto; }
+.modal h3 { margin-bottom:20px; font-size:16px; }
+
+/* ── 알림 토스트 */
+#toast-container { position:fixed; top:16px; right:16px; z-index:9999; }
+.toast { padding:10px 16px; border-radius:8px; font-size:13px; margin-bottom:8px;
+         animation:slideIn .2s ease; box-shadow:0 4px 20px rgba(0,0,0,.4); }
+.toast-ok  { background:#1e3a2f; border:1px solid var(--green); color:var(--green); }
+.toast-err { background:#3a1e22; border:1px solid var(--red);   color:var(--red); }
+.toast-info{ background:#1e2a3a; border:1px solid var(--accent); color:var(--accent); }
+@keyframes slideIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+
+/* ── 로그인 */
+.login-box { background:var(--card-bg); border:1px solid var(--border); border-radius:14px;
+             padding:36px; width:340px; text-align:center; }
+.login-logo { font-size:40px; margin-bottom:12px; }
+.login-title { font-size:20px; font-weight:700; margin-bottom:4px; }
+.login-sub { font-size:13px; color:var(--muted); margin-bottom:24px; }
+
+/* ── 플렉스 유틸 */
+.flex { display:flex; }
+.flex-between { display:flex; justify-content:space-between; align-items:center; }
+.flex-gap { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.mt-8 { margin-top:8px; } .mt-12 { margin-top:12px; } .mt-16 { margin-top:16px; }
+.mb-16 { margin-bottom:16px; }
+.text-muted { color:var(--muted); }
+.text-sm { font-size:12px; }
+.full-w { width:100%; }
+.relative { position:relative; }
+/* ── 블록 에디터 ── */
+.bl-block { position:relative; margin:4px 0; border-radius:8px; border:2px solid transparent; transition:.12s; cursor:pointer; }
+.bl-block:hover { border-color:rgba(137,180,250,.2); }
+.bl-block.bl-selected { border-color:var(--accent); background:rgba(137,180,250,.04); }
+.bl-block.bl-drag-over { border-color:var(--green); background:rgba(166,227,161,.06); }
+.bl-toolbar { display:flex; align-items:center; gap:6px; padding:4px 8px; background:#1e1e2e; border-radius:6px 6px 0 0; font-size:12px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.bl-toolbar button { background:transparent; border:none; color:var(--text); cursor:pointer; padding:2px 5px; border-radius:4px; font-size:12px; }
+.bl-toolbar button:hover { background:rgba(255,255,255,.08); }
+.bl-type-label { cursor:pointer; color:var(--accent); font-weight:600; padding:2px 6px; border-radius:4px; background:rgba(137,180,250,.1); }
+.bl-content { padding:8px 12px; }
+.bl-settings { display:flex; gap:6px; padding:6px 8px; background:#13131f; border-radius:0 0 6px 6px; flex-wrap:wrap; align-items:center; }
+.bl-editable { outline:none; min-height:1.5em; line-height:1.7; }
+.bl-editable:empty:before { content:attr(data-placeholder); color:var(--muted); pointer-events:none; }
+.bl-heading.bl-h1 { font-size:28px; font-weight:700; }
+.bl-heading.bl-h2 { font-size:22px; font-weight:700; }
+.bl-heading.bl-h3 { font-size:18px; font-weight:600; }
+.bl-add-between { display:none; position:absolute; left:50%; transform:translateX(-50%); bottom:-14px; z-index:10; width:24px; height:24px; border-radius:50%; background:var(--accent); color:#1e1e2e; border:none; cursor:pointer; font-size:16px; line-height:24px; text-align:center; padding:0; }
+.bl-block:hover .bl-add-between { display:block; }
+.bl-image-placeholder { border:2px dashed var(--border); border-radius:8px; padding:40px; text-align:center; cursor:pointer; color:var(--muted); transition:.15s; }
+.bl-image-placeholder:hover { border-color:var(--accent); }
+.block-picker-item { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer; font-size:13px; }
+.be-level-sel, .be-lang-inp { background:#13131f; border:1px solid var(--border); color:var(--text); border-radius:4px; padding:2px 6px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">📝</div>
+    <div class="login-title">FL Press</div>
+    <div class="login-sub">관리자 로그인</div>
+    <div class="form-group">
+      <input class="form-control" id="l-user" placeholder="사용자명" value="admin" />
+    </div>
+    <div class="form-group">
+      <input class="form-control" type="password" id="l-pass" placeholder="비밀번호" value="admin2026"
+             onkeydown="if(event.key==='Enter') doLogin()" />
+    </div>
+    <button class="btn btn-primary full-w" onclick="doLogin()">로그인</button>
+  </div>
+</div>
+
+<!-- 앱 -->
+<div id="app">
+<div class="layout">
+
+  <!-- 사이드바 -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">📝</div>
+      <div>
+        <div class="brand-name">FL Press</div>
+        <div class="brand-sub">fx2 CMS</div>
+      </div>
+    </div>
+
+    <div class="nav-section-label">메인</div>
+    <div class="nav-item active" onclick="go('dashboard')">
+      <span class="icon">📊</span> 대시보드
+    </div>
+    <div class="nav-item" onclick="window.open('/','_blank')">
+      <span class="icon">🌐</span> 사이트 보기
+    </div>
+
+    <div class="nav-sep"></div>
+    <div class="nav-section-label">콘텐츠</div>
+
+    <div class="nav-item" onclick="go('posts')">
+      <span class="icon">📝</span> 글
+    </div>
+    <div class="nav-item nav-item-sub" onclick="go('post-new')">새 글 쓰기</div>
+    <div class="nav-item nav-item-sub" onclick="go('categories')">카테고리</div>
+    <div class="nav-item nav-item-sub" onclick="go('tags')">태그</div>
+
+    <div class="nav-item" onclick="go('media')">
+      <span class="icon">🖼️</span> 미디어
+    </div>
+
+    <div class="nav-item" onclick="go('pages')">
+      <span class="icon">📄</span> 페이지
+    </div>
+    <div class="nav-item nav-item-sub" onclick="go('page-new')">새 페이지</div>
+
+    <div class="nav-item" onclick="go('comments')" id="nav-comments">
+      <span class="icon">💬</span> 댓글
+      <span class="badge" id="pending-badge" style="display:none">0</span>
+    </div>
+
+    <div class="nav-sep"></div>
+    <div class="nav-section-label">관리</div>
+
+    <div class="nav-item" onclick="go('users')">
+      <span class="icon">👤</span> 사용자
+    </div>
+    <div class="nav-item nav-item-sub" onclick="go('user-new')">새 사용자</div>
+
+    <div class="nav-item" onclick="go('settings')">
+      <span class="icon">⚙️</span> 설정
+    </div>
+
+    <div class="nav-sep"></div>
+    <div class="nav-item" onclick="doLogout()" style="color:var(--red);margin-bottom:8px">
+      <span class="icon">🚪</span> 로그아웃
+    </div>
+  </nav>
+
+  <!-- 콘텐츠 영역 -->
+  <div class="main-area">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-title" id="page-title">대시보드</div>
+      </div>
+      <div class="topbar-right">
+        <span id="user-display" class="text-muted text-sm"></span>
+        <a href="/" target="_blank" class="btn btn-ghost btn-sm">사이트 보기 🌐</a>
+        <button class="btn btn-primary btn-sm" onclick="go('post-new')">+ 새 글</button>
+      </div>
+    </div>
+
+    <div class="main-content">
+
+      <!-- ══ 대시보드 ══ -->
+      <div class="section active" id="section-dashboard">
+        <div class="stat-grid" id="stat-grid">
+          <div class="stat-card">
+            <div class="stat-icon">📝</div>
+            <div class="stat-label">게시물</div>
+            <div class="stat-value" id="stat-posts">—</div>
+            <div class="stat-sub" id="stat-posts-sub"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">📄</div>
+            <div class="stat-label">페이지</div>
+            <div class="stat-value" id="stat-pages">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">💬</div>
+            <div class="stat-label">댓글</div>
+            <div class="stat-value" id="stat-comments">—</div>
+            <div class="stat-sub" id="stat-comments-sub" style="color:var(--yellow)"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">👤</div>
+            <div class="stat-label">사용자</div>
+            <div class="stat-value" id="stat-users">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🖼️</div>
+            <div class="stat-label">미디어</div>
+            <div class="stat-value" id="stat-media">—</div>
+          </div>
+        </div>
+
+        <div class="flex-gap mt-16" style="gap:16px;align-items:flex-start">
+          <div style="flex:1.5">
+            <div class="card">
+              <div class="card-title">📝 최근 게시물</div>
+              <div id="dash-recent-posts" class="text-muted">로딩 중...</div>
+            </div>
+          </div>
+          <div style="flex:1">
+            <div class="card">
+              <div class="card-title">💬 최근 댓글</div>
+              <div id="dash-recent-comments" class="text-muted">로딩 중...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 모든 글 ══ -->
+      <div class="section" id="section-posts">
+        <div class="flex-between mb-16">
+          <div class="flex-gap">
+            <button class="btn btn-ghost btn-sm" onclick="loadPosts('all')">전체</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadPosts('published')">발행됨</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadPosts('draft')">임시저장</button>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="go('post-new')">+ 새 글</button>
+        </div>
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>제목</th><th>작성자</th><th>카테고리</th><th>상태</th><th>조회</th><th>날짜</th><th>작업</th></tr></thead>
+              <tbody id="posts-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 글 에디터 ══ -->
+      <div class="section" id="section-post-editor">
+        <!-- 상단 툴바 -->
+        <div class="flex-between mb-16">
+          <div class="flex-gap">
+            <!-- 에디터 모드 전환 -->
+            <div style="display:flex;background:rgba(255,255,255,.05);border-radius:7px;padding:2px;gap:2px">
+              <button id="mode-btn-block" class="btn btn-sm" style="padding:5px 12px;border-radius:5px;background:var(--accent);color:#1e1e2e"
+                      onclick="switchEditorMode('block')">⬛ 블록</button>
+              <button id="mode-btn-markdown" class="btn btn-sm btn-ghost" style="padding:5px 12px;border-radius:5px"
+                      onclick="switchEditorMode('markdown')">✏️ Markdown</button>
+            </div>
+            <select class="form-control" id="post-status" style="width:120px">
+              <option value="draft">임시저장</option>
+              <option value="published">발행</option>
+            </select>
+            <select class="form-control" id="post-category" style="width:140px">
+              <option value="1">미분류</option>
+            </select>
+          </div>
+          <div class="flex-gap">
+            <span style="font-size:12px;color:var(--accent)" id="editor-save-status"></span>
+            <button class="btn btn-ghost btn-sm" onclick="savePost('draft')">임시저장</button>
+            <button class="btn btn-primary" onclick="savePost('published')">발행 →</button>
+          </div>
+        </div>
+
+        <input type="hidden" id="edit-post-id" />
+        <input type="hidden" id="editor-mode-val" value="block" />
+
+        <!-- 제목 / 발췌문 -->
+        <input class="form-control mb-12" id="post-title" placeholder="제목을 입력하세요..."
+               style="font-size:24px;font-weight:700;background:transparent;border-color:transparent;padding:8px 4px;border-bottom-color:var(--border)"
+               oninput="autoSlug(this.value)" />
+        <input class="form-control mb-16" id="post-excerpt" placeholder="발췌문 (선택 사항, 비워두면 자동 생성)" style="font-size:13px" />
+
+        <!-- ───── 블록 에디터 ───── -->
+        <div id="block-editor-wrap" class="editor-wrap" style="background:#13131f;border-radius:10px;min-height:500px;position:relative">
+          <!-- 블록 캔버스 -->
+          <div id="block-canvas" style="padding:24px 60px;min-height:460px;position:relative" ondragover="blockDragOver(event)" ondrop="blockDrop(event)"></div>
+
+          <!-- + 블록 추가 버튼 (캔버스 하단) -->
+          <div style="padding:0 60px 16px;position:relative">
+            <button class="block-add-btn" onclick="event.stopPropagation();showBlockPicker(null)" style="width:100%;padding:10px;background:rgba(137,180,250,.06);border:1px dashed rgba(137,180,250,.2);border-radius:8px;color:var(--muted);cursor:pointer;font-size:13px;transition:.15s"
+                    onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+                    onmouseout="this.style.borderColor='rgba(137,180,250,.2)';this.style.color='var(--muted)'">
+              + 블록 추가
+            </button>
+          </div>
+
+          <!-- 블록 타입 선택 팝업 -->
+          <div id="block-picker" style="display:none;position:absolute;background:#1e1e2e;border:1px solid var(--border);border-radius:10px;padding:8px;z-index:100;box-shadow:0 8px 32px rgba(0,0,0,.5);width:280px">
+            <input id="block-picker-search" placeholder="블록 검색 또는 /명령어..." style="width:100%;padding:8px 10px;background:#13131f;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none;margin-bottom:8px" oninput="filterBlockTypes(this.value)" onkeydown="pickerKeyNav(event)" />
+            <div id="block-picker-list"></div>
+          </div>
+        </div>
+
+        <!-- ───── Markdown 에디터 ───── -->
+        <div id="markdown-editor-wrap" class="editor-wrap" style="display:none">
+          <div id="editor-tabs" style="display:flex;background:#13131f;border-bottom:1px solid var(--border)">
+            <div class="editor-tab active" onclick="switchEditorTab('write')">✏️ 작성</div>
+            <div class="editor-tab" onclick="switchEditorTab('preview')">👁 미리보기</div>
+          </div>
+          <div class="editor-toolbar">
+            <button onclick="insertMd('**','**')"><b>B</b></button>
+            <button onclick="insertMd('*','*')"><i>I</i></button>
+            <button onclick="insertMdLine('# ')">H1</button>
+            <button onclick="insertMdLine('## ')">H2</button>
+            <button onclick="insertMdLine('### ')">H3</button>
+            <div class="sep"></div>
+            <button onclick="insertMdLine('- ')">• 목록</button>
+            <button onclick="insertMdLine('> ')">❝ 인용</button>
+            <button onclick="insertMd('\`','\`')">코드</button>
+            <button onclick="insertLink()">🔗</button>
+            <button onclick="insertImage()">🖼️</button>
+            <button onclick="insertMdLine('---')">—</button>
+          </div>
+          <textarea id="editor-input" style="min-height:400px;padding:16px;background:#1a1a2e;color:var(--text);border:none;outline:none;font-family:Consolas,monospace;font-size:13.5px;line-height:1.7;resize:vertical;width:100%" oninput="updateEditorStatus()" placeholder="Markdown..."></textarea>
+          <div id="editor-preview" style="min-height:400px;padding:16px;background:#1a1a2e;display:none;line-height:1.8"></div>
+          <div class="editor-statusbar">
+            <span id="editor-chars">0자</span>
+            <span id="editor-words">0단어</span>
+            <span id="editor-lines">1줄</span>
+          </div>
+        </div>
+
+        <!-- 메타 -->
+        <div class="mt-12 flex-gap">
+          <div class="form-group" style="flex:1">
+            <label>슬러그 (URL)</label>
+            <input class="form-control" id="post-slug" placeholder="url-slug" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>대표 이미지 URL</label>
+            <input class="form-control" id="post-featured" placeholder="https://..." />
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 페이지 목록 ══ -->
+      <div class="section" id="section-pages">
+        <div class="flex-between mb-16">
+          <div></div>
+          <button class="btn btn-primary btn-sm" onclick="go('page-new')">+ 새 페이지</button>
+        </div>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>제목</th><th>슬러그</th><th>상태</th><th>날짜</th><th>작업</th></tr></thead>
+            <tbody id="pages-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══ 페이지 에디터 ══ -->
+      <div class="section" id="section-page-editor">
+        <div class="flex-between mb-16">
+          <div></div>
+          <button class="btn btn-primary" onclick="savePage()">저장</button>
+        </div>
+        <input type="hidden" id="edit-page-id" />
+        <input class="form-control mb-16" id="page-title" placeholder="페이지 제목"
+               style="font-size:20px;font-weight:700" />
+        <div class="editor-wrap">
+          <textarea id="page-content" class="form-control"
+                    style="min-height:400px;font-family:monospace;font-size:13px;border-radius:0;border:none"
+                    placeholder="내용을 HTML 또는 Markdown으로 작성하세요..."></textarea>
+        </div>
+        <div class="mt-12 flex-gap">
+          <div class="form-group" style="flex:1">
+            <label>슬러그</label>
+            <input class="form-control" id="page-slug" />
+          </div>
+          <div class="form-group" style="width:140px">
+            <label>상태</label>
+            <select class="form-control" id="page-status">
+              <option value="draft">임시저장</option>
+              <option value="published">발행</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 카테고리 ══ -->
+      <div class="section" id="section-categories">
+        <div class="flex-gap" style="gap:16px;align-items:flex-start">
+          <div style="flex:1">
+            <div class="card" style="padding:0">
+              <div class="card-title" style="padding:16px 20px;border-bottom:1px solid var(--border)">카테고리 목록</div>
+              <table>
+                <thead><tr><th>이름</th><th>슬러그</th><th>게시물</th><th>작업</th></tr></thead>
+                <tbody id="cats-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div style="width:280px">
+            <div class="card">
+              <div class="card-title">새 카테고리</div>
+              <div class="form-group"><label>이름</label><input class="form-control" id="cat-name" /></div>
+              <div class="form-group"><label>슬러그</label><input class="form-control" id="cat-slug" placeholder="자동 생성" /></div>
+              <div class="form-group"><label>설명</label><textarea class="form-control" id="cat-desc" style="min-height:60px"></textarea></div>
+              <button class="btn btn-primary full-w" onclick="createCat()">+ 카테고리 추가</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 태그 ══ -->
+      <div class="section" id="section-tags">
+        <div class="flex-gap" style="gap:16px;align-items:flex-start">
+          <div style="flex:1">
+            <div class="card" style="padding:0">
+              <div class="card-title" style="padding:16px 20px;border-bottom:1px solid var(--border)">태그 목록</div>
+              <table>
+                <thead><tr><th>이름</th><th>슬러그</th><th>게시물 수</th></tr></thead>
+                <tbody id="tags-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div style="width:280px">
+            <div class="card">
+              <div class="card-title">새 태그</div>
+              <div class="form-group"><label>이름</label><input class="form-control" id="tag-name" /></div>
+              <div class="form-group"><label>슬러그</label><input class="form-control" id="tag-slug" placeholder="자동 생성" /></div>
+              <button class="btn btn-primary full-w" onclick="createTag()">+ 태그 추가</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 미디어 ══ -->
+      <div class="section" id="section-media">
+        <div class="card">
+          <div class="card-title">파일 업로드</div>
+          <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()"
+               ondrop="handleDrop(event)" ondragover="event.preventDefault(); this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')">
+            <div class="dz-icon">📁</div>
+            <div class="dz-text">파일을 드래그하거나 클릭하여 업로드</div>
+            <div class="dz-sub">이미지, 문서, 영상 (최대 10MB)</div>
+          </div>
+          <input type="file" id="file-input" style="display:none" multiple onchange="uploadFiles(this.files)" />
+          <div id="upload-progress" style="margin-top:12px"></div>
+        </div>
+        <div class="card" style="padding:0">
+          <div class="card-title" style="padding:16px 20px;border-bottom:1px solid var(--border)">
+            <span>미디어 라이브러리</span>
+            <button class="btn btn-ghost btn-sm" onclick="loadMedia()" style="margin-left:auto">↻ 새로고침</button>
+          </div>
+          <div style="padding:16px">
+            <div class="media-grid" id="media-grid"><div class="text-muted">로딩 중...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 댓글 ══ -->
+      <div class="section" id="section-comments">
+        <div class="flex-gap mb-16">
+          <button class="btn btn-ghost btn-sm" onclick="loadComments('pending')" id="btn-pending">대기중</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadComments('approved')">승인됨</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadComments('spam')">스팸</button>
+        </div>
+        <div class="card" style="padding:0">
+          <div id="comments-list"></div>
+        </div>
+      </div>
+
+      <!-- ══ 사용자 ══ -->
+      <div class="section" id="section-users">
+        <div class="flex-between mb-16">
+          <div></div>
+          <button class="btn btn-primary btn-sm" onclick="go('user-new')">+ 새 사용자</button>
+        </div>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>사용자명</th><th>이메일</th><th>표시명</th><th>역할</th><th>가입일</th><th>작업</th></tr></thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══ 새 사용자 ══ -->
+      <div class="section" id="section-user-new">
+        <div class="card" style="max-width:480px">
+          <div class="card-title">새 사용자 추가</div>
+          <div class="form-group"><label>사용자명 *</label><input class="form-control" id="nu-user" /></div>
+          <div class="form-group"><label>이메일 *</label><input class="form-control" type="email" id="nu-email" /></div>
+          <div class="form-group"><label>표시 이름</label><input class="form-control" id="nu-dname" /></div>
+          <div class="form-group"><label>비밀번호 *</label><input class="form-control" type="password" id="nu-pass" /></div>
+          <div class="form-group">
+            <label>역할</label>
+            <select class="form-control" id="nu-role">
+              <option value="subscriber">구독자</option>
+              <option value="author">작성자</option>
+              <option value="editor">편집자</option>
+              <option value="administrator">관리자</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="createUser()">사용자 추가</button>
+        </div>
+      </div>
+
+      <!-- ══ 설정 ══ -->
+      <div class="section" id="section-settings">
+        <div style="max-width:600px">
+          <div class="card">
+            <div class="card-title">⚙️ 일반 설정</div>
+            <div class="form-group"><label>사이트 이름</label><input class="form-control" id="set-name" /></div>
+            <div class="form-group"><label>사이트 설명</label><input class="form-control" id="set-desc" /></div>
+            <div class="form-group"><label>사이트 URL</label><input class="form-control" id="set-url" /></div>
+            <div class="form-group"><label>페이지당 게시물 수</label><input class="form-control" type="number" id="set-per-page" /></div>
+            <button class="btn btn-primary" onclick="saveSettings()">설정 저장</button>
+          </div>
+          <div class="card">
+            <div class="card-title">💬 댓글 설정</div>
+            <label class="flex-gap" style="cursor:pointer">
+              <input type="checkbox" id="set-allow-comments" />
+              <span>댓글 허용</span>
+            </label>
+            <div class="mt-8">
+              <label class="flex-gap" style="cursor:pointer">
+                <input type="checkbox" id="set-moderation" />
+                <span>댓글 승인 필요</span>
+              </label>
+            </div>
+            <button class="btn btn-primary mt-12" onclick="saveSettings()">저장</button>
+          </div>
+          <div class="card">
+            <div class="card-title">🔍 SEO</div>
+            <div class="flex-gap">
+              <a href="/sitemap.xml" target="_blank" class="btn btn-ghost">sitemap.xml 보기</a>
+              <a href="/robots.txt" target="_blank" class="btn btn-ghost">robots.txt 보기</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- main-content -->
+  </div><!-- main-area -->
+</div><!-- layout -->
+</div><!-- app -->
+
+<!-- 토스트 -->
+<div id="toast-container"></div>
+
+<!-- 미디어 선택 모달 -->
+<div class="modal-overlay" id="media-modal">
+  <div class="modal" style="width:700px">
+    <div class="flex-between mb-16">
+      <h3>미디어 선택</h3>
+      <button class="btn btn-ghost btn-sm" onclick="closeMediaModal()">✕</button>
+    </div>
+    <div class="media-grid" id="modal-media-grid"></div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let currentToken = localStorage.getItem('flp_token') || '';
+let currentSection = 'dashboard';
+let mediaSelectCallback = null;
+
+// ── API 헬퍼 ─────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (currentToken) opts.headers['authorization'] = 'Bearer ' + currentToken;
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch(API + path, opts);
+    return r.json();
+  } catch(e) { return { ok:false, error: e.message }; }
+}
+
+function toast(msg, type='ok') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── 인증 ─────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const r = await api('POST', '/api/auth/login', {
+    username: document.getElementById('l-user').value,
+    password: document.getElementById('l-pass').value
+  });
+  if (!r.ok) { toast(r.error || '로그인 실패', 'err'); return; }
+  currentToken = r.data.token;
+  localStorage.setItem('flp_token', currentToken);
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('user-display').textContent = '👤 ' + (r.data.display_name || r.data.username);
+  initApp();
+}
+
+async function doLogout() {
+  await api('POST', '/api/auth/logout');
+  localStorage.removeItem('flp_token');
+  location.reload();
+}
+
+// ── 내비게이션 ───────────────────────────────────────────────────────────────
+const sectionTitles = {
+  dashboard:'대시보드', posts:'모든 글', 'post-new':'새 글 쓰기', 'post-edit':'글 편집',
+  pages:'모든 페이지', 'page-new':'새 페이지', 'page-edit':'페이지 편집',
+  categories:'카테고리', tags:'태그', media:'미디어', comments:'댓글',
+  users:'사용자', 'user-new':'새 사용자', settings:'설정'
+};
+
+function go(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  currentSection = name;
+
+  const sectionMap = {
+    'post-new': 'post-editor', 'post-edit': 'post-editor',
+    'page-new': 'page-editor', 'page-edit': 'page-editor',
+    'user-new': 'user-new',
+  };
+  const sectionId = sectionMap[name] || name;
+  const el = document.getElementById('section-' + sectionId);
+  if (el) el.classList.add('active');
+  document.getElementById('page-title').textContent = sectionTitles[name] || name;
+
+  const loaders = {
+    dashboard: loadDashboard, posts: () => loadPosts('all'),
+    'post-new': initNewPost, pages: loadPages, 'page-new': initNewPage,
+    categories: loadCategories, tags: loadTags,
+    media: loadMedia, comments: () => loadComments('pending'),
+    users: loadUsers, settings: loadSettings,
+  };
+  if (loaders[name]) loaders[name]();
+}
+
+// ── 대시보드 ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const r = await api('GET', '/api/dashboard');
+  if (!r.ok) return;
+  const d = r.data;
+  document.getElementById('stat-posts').textContent = d.posts.total;
+  document.getElementById('stat-posts-sub').textContent = `발행 ${d.posts.published} / 초안 ${d.posts.draft}`;
+  document.getElementById('stat-pages').textContent = d.pages;
+  document.getElementById('stat-comments').textContent = d.comments.total;
+  if (d.comments.pending > 0) {
+    document.getElementById('stat-comments-sub').textContent = `승인 대기 ${d.comments.pending}`;
+    document.getElementById('pending-badge').textContent = d.comments.pending;
+    document.getElementById('pending-badge').style.display = '';
+  }
+  document.getElementById('stat-users').textContent = d.users;
+  document.getElementById('stat-media').textContent = d.media;
+
+  document.getElementById('dash-recent-posts').innerHTML = (d.recent_posts||[]).map(p =>
+    `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <a href="#" onclick="editPost(${p.id})" style="color:var(--text);text-decoration:none">
+        <span style="font-size:13px;font-weight:500">${p.title}</span>
+      </a>
+      <div class="text-muted text-sm">${statusBadge(p.status)}</div>
+    </div>`).join('') || '<div class="text-muted">게시물 없음</div>';
+
+  document.getElementById('dash-recent-comments').innerHTML = (d.recent_comments||[]).map(c =>
+    `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:600">${c.author}</div>
+      <div class="text-muted text-sm" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:200px">${c.content}</div>
+      <div class="mt-8 flex-gap">${c.status==='pending'?`<button class="btn btn-success btn-xs" onclick="approveComment(${c.id})">승인</button>`:''}<button class="btn btn-danger btn-xs" onclick="deleteComment(${c.id})">삭제</button></div>
+    </div>`).join('') || '<div class="text-muted">댓글 없음</div>';
+}
+
+// ── 게시물 ───────────────────────────────────────────────────────────────────
+function statusBadge(s) {
+  const m = { published:'<span class="badge badge-green">발행됨</span>',
+              draft:'<span class="badge badge-yellow">임시저장</span>',
+              pending:'<span class="badge badge-blue">검토중</span>' };
+  return m[s] || s;
+}
+
+async function loadPosts(status) {
+  const url = status === 'all' ? '/api/posts?status=published&type=post' : `/api/posts?status=${status}&type=post`;
+  const r = await api('GET', url);
+  if (!r.ok) return;
+  document.getElementById('posts-tbody').innerHTML = (r.data.posts||[]).map(p => `
+    <tr>
+      <td><a href="#" onclick="editPost(${p.id})" style="color:var(--accent);text-decoration:none;font-weight:500">${p.title}</a></td>
+      <td class="text-muted">${p.author_name||'-'}</td>
+      <td><span class="badge badge-purple">${p.category_name||'미분류'}</span></td>
+      <td>${statusBadge(p.status)}</td>
+      <td class="text-muted">${p.view_count||0}</td>
+      <td class="text-muted text-sm">${fmtDate(p.created_at)}</td>
+      <td><div class="flex-gap">
+        <button class="btn btn-ghost btn-xs" onclick="editPost(${p.id})">편집</button>
+        <a href="/${p.slug}" target="_blank" class="btn btn-ghost btn-xs">보기</a>
+        <button class="btn btn-danger btn-xs" onclick="deletePost(${p.id})">삭제</button>
+      </div></td>
+    </tr>`).join('') || '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:24px">게시물 없음</td></tr>';
+}
+
+async function editPost(id) {
+  const r = await api('GET', `/api/posts/${id}`);
+  if (!r.ok) return;
+  const p = r.data.post;
+  document.getElementById('edit-post-id').value = p.id;
+  document.getElementById('post-title').value = p.title;
+  document.getElementById('post-excerpt').value = p.excerpt || '';
+  document.getElementById('post-slug').value = p.slug || '';
+  document.getElementById('post-featured').value = p.featured_image || '';
+  document.getElementById('post-status').value = p.status || 'draft';
+  await loadCatsForSelect();
+  document.getElementById('post-category').value = p.category_id || 1;
+  // 에디터 모드 복원
+  if (p.blocks) {
+    switchEditorMode('block');
+    BE.load(JSON.parse(p.blocks));
+  } else {
+    switchEditorMode('markdown');
+    document.getElementById('editor-input').value = p.content || '';
+    updateEditorStatus();
+  }
+  go('post-edit');
+}
+
+function initNewPost() {
+  document.getElementById('edit-post-id').value = '';
+  document.getElementById('post-title').value = '';
+  document.getElementById('post-excerpt').value = '';
+  document.getElementById('post-slug').value = '';
+  document.getElementById('post-featured').value = '';
+  document.getElementById('post-status').value = 'draft';
+  switchEditorMode('block');
+  BE.init();
+  loadCatsForSelect();
+}
+
+async function savePost(status) {
+  const id = document.getElementById('edit-post-id').value;
+  const mode = document.getElementById('editor-mode-val').value;
+  let content, blocks;
+  if (mode === 'block') {
+    blocks = JSON.stringify(BE.blocks);
+    content = BE.toHtml();
+  } else {
+    content = document.getElementById('editor-input').value;
+    blocks = null;
+  }
+  const payload = {
+    title: document.getElementById('post-title').value,
+    content,
+    blocks,
+    excerpt: document.getElementById('post-excerpt').value,
+    slug: document.getElementById('post-slug').value,
+    featured_image: document.getElementById('post-featured').value,
+    status: status || document.getElementById('post-status').value,
+    category_id: document.getElementById('post-category').value,
+    post_type: 'post'
+  };
+  if (!payload.title) { toast('제목을 입력하세요', 'err'); return; }
+  document.getElementById('editor-save-status').textContent = '저장 중...';
+  const r = id ? await api('POST', `/api/posts/${id}`, payload)
+               : await api('POST', '/api/posts', payload);
+  if (r.ok) {
+    document.getElementById('editor-save-status').textContent = '✓ 저장됨';
+    if (!id && r.data.id) document.getElementById('edit-post-id').value = r.data.id;
+    toast(status === 'published' ? '발행 완료!' : '임시저장 완료');
+    setTimeout(() => document.getElementById('editor-save-status').textContent = '', 2000);
+  } else {
+    toast('저장 실패: ' + r.error, 'err');
+    document.getElementById('editor-save-status').textContent = '';
+  }
+}
+
+async function deletePost(id) {
+  if (!confirm('이 게시물을 삭제하시겠습니까?')) return;
+  const r = await api('POST', `/api/posts/${id}/delete`);
+  if (r.ok) { toast('삭제됨'); loadPosts('all'); go('posts'); }
+  else toast('삭제 실패', 'err');
+}
+
+// ── 에디터 ───────────────────────────────────────────────────────────────────
+function switchEditorTab(tab) {
+  document.querySelectorAll('.editor-tab').forEach(t => t.classList.remove('active'));
+  if (tab === 'write') {
+    document.getElementById('editor-input').style.display = '';
+    document.getElementById('editor-preview').style.display = 'none';
+    document.querySelectorAll('.editor-tab')[0].classList.add('active');
+  } else {
+    document.getElementById('editor-input').style.display = 'none';
+    const prev = document.getElementById('editor-preview');
+    prev.style.display = '';
+    prev.innerHTML = renderMarkdown(document.getElementById('editor-input').value);
+    document.querySelectorAll('.editor-tab')[1].classList.add('active');
+  }
+}
+
+function renderMarkdown(text) {
+  if (!text) return '<p class="text-muted">내용 없음</p>';
+  return text
+    .replace(/### (.+)/g,'<h3>$1</h3>').replace(/## (.+)/g,'<h2>$1</h2>').replace(/# (.+)/g,'<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/```([\s\S]+?)```/g,'<pre>$1</pre>')
+    .replace(/^- (.+)/gm,'<li>$1</li>').replace(/^(\d+)\. (.+)/gm,'<li>$2</li>')
+    .replace(/^> (.+)/gm,'<blockquote style="border-left:3px solid var(--accent);padding-left:12px;color:var(--muted)">$1</blockquote>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" style="color:var(--accent)">$1</a>')
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g,'<img src="$2" alt="$1" style="max-width:100%;border-radius:6px">')
+    .replace(/^---$/gm,'<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">')
+    .split('\n\n').map(b => b.trim() ? (b.startsWith('<')?b:`<p>${b}</p>`) : '').join('');
+}
+
+function insertMd(before, after) {
+  const ta = document.getElementById('editor-input');
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  const sel = ta.value.substring(s, e);
+  ta.value = ta.value.substring(0,s) + before + sel + after + ta.value.substring(e);
+  ta.focus(); ta.setSelectionRange(s+before.length, s+before.length+sel.length);
+  updateEditorStatus();
+}
+function insertMdLine(prefix) {
+  const ta = document.getElementById('editor-input');
+  const s = ta.selectionStart;
+  const lineStart = ta.value.lastIndexOf('\n', s-1)+1;
+  ta.value = ta.value.substring(0,lineStart) + prefix + ta.value.substring(lineStart);
+  ta.focus(); ta.setSelectionRange(lineStart+prefix.length, lineStart+prefix.length);
+  updateEditorStatus();
+}
+function insertLink() {
+  const url = prompt('URL 입력:');
+  if (url) insertMd('[', `](${url})`);
+}
+function insertImage() {
+  mediaSelectCallback = (url) => insertMd('![이미지]', `(${url})`);
+  openMediaModal();
+}
+function updateEditorStatus() {
+  const v = document.getElementById('editor-input').value;
+  document.getElementById('editor-chars').textContent = v.length + '자';
+  document.getElementById('editor-words').textContent = (v.trim() ? v.trim().split(/\s+/).length : 0) + '단어';
+  document.getElementById('editor-lines').textContent = v.split('\n').length + '줄';
+}
+
+function autoSlug(title) {
+  const slug = title.toLowerCase()
+    .replace(/[^\w가-힣\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+  document.getElementById('post-slug').value = slug;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ███ 블록 에디터 엔진 (BE)
+// ─────────────────────────────────────────────────────────────────
+const BLOCK_TYPES = [
+  { type:'paragraph', icon:'¶',  label:'단락',     desc:'일반 텍스트' },
+  { type:'heading',   icon:'H',  label:'제목',     desc:'H1 / H2 / H3' },
+  { type:'image',     icon:'🖼', label:'이미지',   desc:'이미지 삽입' },
+  { type:'code',      icon:'<>', label:'코드',     desc:'코드 블록' },
+  { type:'quote',     icon:'❝', label:'인용',     desc:'인용문' },
+  { type:'list',      icon:'☰',  label:'목록',     desc:'순서없는 / 번호 목록' },
+  { type:'divider',   icon:'—',  label:'구분선',   desc:'수평 구분선' },
+  { type:'html',      icon:'{}', label:'HTML',     desc:'Raw HTML' },
+  { type:'columns',   icon:'⊟',  label:'컬럼',     desc:'2단 레이아웃' },
+  { type:'embed',     icon:'▶',  label:'임베드',   desc:'YouTube / URL' },
+];
+
+const BE = (() => {
+  let blocks = [];
+  let selectedId = null;
+  let pickerAfter = null;    // 삽입 위치 (null = 마지막)
+  let pickerHighlight = 0;
+  let dragSrcId = null;
+
+  const uid = () => Math.random().toString(36).slice(2,8);
+
+  const defaultBlock = (type) => {
+    const b = { id: uid(), type };
+    if (type === 'paragraph') b.content = '';
+    if (type === 'heading')   { b.content = ''; b.level = 2; }
+    if (type === 'image')     { b.src = ''; b.alt = ''; b.caption = ''; }
+    if (type === 'code')      { b.content = ''; b.lang = ''; }
+    if (type === 'quote')     { b.content = ''; b.cite = ''; }
+    if (type === 'list')      { b.items = ['']; b.ordered = false; }
+    if (type === 'divider')   {}
+    if (type === 'html')      b.content = '';
+    if (type === 'columns')   b.cols = ['',''];
+    if (type === 'embed')     { b.url = ''; b.caption = ''; }
+    return b;
+  };
+
+  // ── 렌더 ────────────────────────────────────────────────────────
+  const renderBlock = (b) => {
+    const sel = b.id === selectedId;
+    const wrap = (inner, extra='') =>
+      `<div class="bl-block ${sel?'bl-selected':''}" id="bl-${b.id}" data-id="${b.id}"
+            onclick="BE.select('${b.id}',event)"
+            draggable="true" ondragstart="BE.dragStart('${b.id}')"
+            ondragover="BE.dragOver('${b.id}',event)" ondrop="BE.dragDropOn('${b.id}')"
+            ${extra}>
+         ${sel ? renderBlockToolbar(b) : ''}
+         <div class="bl-content">${inner}</div>
+         ${sel ? renderBlockSettings(b) : ''}
+         <button class="bl-add-between" onclick="event.stopPropagation();showBlockPicker('${b.id}')" title="여기에 추가">+</button>
+       </div>`;
+
+    if (b.type === 'paragraph')
+      return wrap(`<div class="bl-editable" contenteditable="true" id="be-${b.id}"
+                        onblur="BE.saveText('${b.id}',this)" onkeydown="BE.keyNav('${b.id}',event)"
+                        data-placeholder="단락 입력... '/' 입력 시 블록 변환"
+                        oninput="BE.handleSlash('${b.id}',this)">${esc(b.content)}</div>`);
+
+    if (b.type === 'heading')
+      return wrap(`<div class="bl-editable bl-heading bl-h${b.level}" contenteditable="true" id="be-${b.id}"
+                        onblur="BE.saveText('${b.id}',this)" onkeydown="BE.keyNav('${b.id}',event)"
+                        data-placeholder="제목 입력...">${esc(b.content)}</div>`);
+
+    if (b.type === 'image')
+      return wrap(b.src
+        ? `<figure style="margin:0"><img src="${b.src}" alt="${esc(b.alt)}" style="max-width:100%;border-radius:6px;display:block">
+             ${b.caption ? `<figcaption style="text-align:center;color:var(--muted);font-size:12px;margin-top:6px">${esc(b.caption)}</figcaption>`:''}
+           </figure>`
+        : `<div class="bl-image-placeholder" onclick="BE.pickImage('${b.id}')">
+             <span style="font-size:40px">🖼️</span><br>
+             <span style="color:var(--accent)">이미지 선택</span> 또는 URL 입력
+           </div>`);
+
+    if (b.type === 'code')
+      return wrap(`<div style="position:relative">
+                     ${b.lang ? `<span style="position:absolute;top:8px;right:10px;font-size:11px;color:var(--muted)">${esc(b.lang)}</span>` : ''}
+                     <pre style="background:#0d0d1a;border-radius:6px;padding:16px;overflow-x:auto;margin:0"><code id="be-${b.id}" contenteditable="true"
+                       onblur="BE.saveText('${b.id}',this)" style="color:#cdd6f4;font-family:Consolas,monospace;font-size:13px;white-space:pre;outline:none">${esc(b.content)}</code></pre>
+                   </div>`);
+
+    if (b.type === 'quote')
+      return wrap(`<blockquote style="border-left:4px solid var(--accent);margin:0;padding:12px 16px">
+                     <div class="bl-editable" contenteditable="true" id="be-${b.id}"
+                          onblur="BE.saveText('${b.id}',this)" style="font-style:italic;color:var(--text)"
+                          data-placeholder="인용문...">${esc(b.content)}</div>
+                     ${b.cite ? `<cite style="font-size:12px;color:var(--muted);display:block;margin-top:4px">— ${esc(b.cite)}</cite>` : ''}
+                   </blockquote>`);
+
+    if (b.type === 'list') {
+      const tag = b.ordered ? 'ol' : 'ul';
+      const items = b.items.map((item, i) =>
+        `<li><div class="bl-editable" contenteditable="true" id="be-${b.id}-${i}"
+               onblur="BE.saveListItem('${b.id}',${i},this)"
+               onkeydown="BE.listKeyNav('${b.id}',${i},event)"
+               data-placeholder="항목 입력...">${esc(item)}</div></li>`).join('');
+      return wrap(`<${tag} style="padding-left:24px">${items}</${tag}>`);
+    }
+
+    if (b.type === 'divider')
+      return wrap(`<hr style="border:none;border-top:2px solid var(--border);margin:8px 0">`);
+
+    if (b.type === 'html')
+      return wrap(`<div>
+                     <div style="font-size:11px;color:var(--muted);margin-bottom:4px">HTML</div>
+                     <textarea id="be-${b.id}" class="form-control" style="font-family:Consolas,monospace;font-size:12px;min-height:80px;resize:vertical"
+                               onblur="BE.saveText('${b.id}',this)">${esc(b.content)}</textarea>
+                   </div>`);
+
+    if (b.type === 'columns')
+      return wrap(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                     <div><div class="bl-editable" contenteditable="true" id="be-${b.id}-0"
+                               onblur="BE.saveColItem('${b.id}',0,this)" style="min-height:60px;background:rgba(255,255,255,.03);border-radius:6px;padding:10px"
+                               data-placeholder="왼쪽 열...">${esc(b.cols[0])}</div></div>
+                     <div><div class="bl-editable" contenteditable="true" id="be-${b.id}-1"
+                               onblur="BE.saveColItem('${b.id}',1,this)" style="min-height:60px;background:rgba(255,255,255,.03);border-radius:6px;padding:10px"
+                               data-placeholder="오른쪽 열...">${esc(b.cols[1])}</div></div>
+                   </div>`);
+
+    if (b.type === 'embed') {
+      let preview = '';
+      if (b.url) {
+        const ytMatch = b.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?]+)/);
+        if (ytMatch) preview = `<iframe src="https://www.youtube.com/embed/${ytMatch[1]}" width="100%" height="315" frameborder="0" style="border-radius:8px" allowfullscreen></iframe>`;
+        else preview = `<a href="${b.url}" target="_blank" style="color:var(--accent)">${b.url}</a>`;
+      }
+      return wrap(b.url
+        ? `<div>${preview}${b.caption?`<p style="text-align:center;font-size:12px;color:var(--muted);margin-top:6px">${esc(b.caption)}</p>`:''}</div>`
+        : `<div class="bl-image-placeholder" onclick="BE.promptEmbed('${b.id}')">
+             <span style="font-size:36px">▶️</span><br>
+             <span style="color:var(--accent)">URL 입력</span> (YouTube, 링크...)
+           </div>`);
+    }
+
+    return wrap(`<div class="text-muted">${b.type}</div>`);
+  };
+
+  const renderBlockToolbar = (b) =>
+    `<div class="bl-toolbar">
+       <span class="bl-type-label" onclick="BE.showTypeChanger('${b.id}')" title="블록 타입 변경">
+         ${BLOCK_TYPES.find(t=>t.type===b.type)?.icon||'?'} ${BLOCK_TYPES.find(t=>t.type===b.type)?.label||b.type}
+       </span>
+       <div style="flex:1"></div>
+       ${b.type==='heading' ? `<select class="be-level-sel" onchange="BE.setLevel('${b.id}',this.value)">
+         <option ${b.level==1?'selected':''} value="1">H1</option>
+         <option ${b.level==2?'selected':''} value="2">H2</option>
+         <option ${b.level==3?'selected':''} value="3">H3</option>
+       </select>` : ''}
+       ${b.type==='code' ? `<input class="be-lang-inp" value="${esc(b.lang)}" placeholder="언어" onblur="BE.setLang('${b.id}',this.value)" style="width:80px;margin-right:4px">` : ''}
+       ${b.type==='list' ? `<label style="font-size:12px;cursor:pointer"><input type="checkbox" ${b.ordered?'checked':''} onchange="BE.setOrdered('${b.id}',this.checked)"> 번호</label>` : ''}
+       <button onclick="BE.moveUp('${b.id}')" title="위로">↑</button>
+       <button onclick="BE.moveDown('${b.id}')" title="아래로">↓</button>
+       <button onclick="BE.duplicate('${b.id}')" title="복제">⧉</button>
+       <button onclick="BE.remove('${b.id}')" title="삭제" style="color:#f38ba8">✕</button>
+     </div>`;
+
+  const renderBlockSettings = (b) => {
+    if (b.type === 'image')
+      return `<div class="bl-settings">
+        <input class="form-control" value="${esc(b.src)}" placeholder="이미지 URL" style="flex:2" onblur="BE.setImageSrc('${b.id}',this.value)">
+        <input class="form-control" value="${esc(b.alt)}" placeholder="대체 텍스트" onblur="BE.setImageAlt('${b.id}',this.value)">
+        <input class="form-control" value="${esc(b.caption)}" placeholder="캡션" onblur="BE.setImageCap('${b.id}',this.value)">
+        <button class="btn btn-ghost btn-sm" onclick="BE.pickImage('${b.id}')">미디어 선택</button>
+      </div>`;
+    if (b.type === 'quote')
+      return `<div class="bl-settings">
+        <input class="form-control" value="${esc(b.cite)}" placeholder="출처" onblur="BE.setCite('${b.id}',this.value)">
+      </div>`;
+    if (b.type === 'embed')
+      return `<div class="bl-settings">
+        <input class="form-control" value="${esc(b.url)}" placeholder="URL (YouTube, 링크...)" style="flex:2" onblur="BE.setEmbedUrl('${b.id}',this.value)">
+        <input class="form-control" value="${esc(b.caption)}" placeholder="캡션" onblur="BE.setEmbedCap('${b.id}',this.value)">
+      </div>`;
+    if (b.type === 'list')
+      return `<div class="bl-settings">
+        <button class="btn btn-ghost btn-sm" onclick="BE.addListItem('${b.id}')">+ 항목 추가</button>
+        <button class="btn btn-ghost btn-sm" onclick="BE.removeListItem('${b.id}')">- 마지막 항목</button>
+      </div>`;
+    return '';
+  };
+
+  const esc = (s) => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // ── 블록 → HTML 변환 (저장용) ───────────────────────────────────
+  const blockToHtml = (b) => {
+    if (b.type === 'paragraph') return `<p>${b.content}</p>`;
+    if (b.type === 'heading')   return `<h${b.level}>${b.content}</h${b.level}>`;
+    if (b.type === 'image')     return b.src ? `<figure><img src="${b.src}" alt="${b.alt||''}"><figcaption>${b.caption||''}</figcaption></figure>` : '';
+    if (b.type === 'code')      return `<pre><code class="language-${b.lang||'text'}">${b.content}</code></pre>`;
+    if (b.type === 'quote')     return `<blockquote>${b.content}${b.cite?`<cite>— ${b.cite}</cite>`:''}</blockquote>`;
+    if (b.type === 'list')      { const tag = b.ordered?'ol':'ul'; return `<${tag}>${(b.items||[]).map(i=>`<li>${i}</li>`).join('')}</${tag}>`; }
+    if (b.type === 'divider')   return `<hr>`;
+    if (b.type === 'html')      return b.content;
+    if (b.type === 'columns')   return `<div class="wp-cols">${(b.cols||['']).map(c=>`<div>${c}</div>`).join('')}</div>`;
+    if (b.type === 'embed') {
+      const yt = b.url?.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?]+)/);
+      return yt ? `<iframe src="https://www.youtube.com/embed/${yt[1]}" width="100%" height="315" frameborder="0" allowfullscreen></iframe>`
+                : `<a href="${b.url}">${b.url}</a>`;
+    }
+    return '';
+  };
+
+  // ── 공개 API ────────────────────────────────────────────────────
+  const render = () => {
+    const canvas = document.getElementById('block-canvas');
+    if (!canvas) return;
+    canvas.innerHTML = blocks.length
+      ? blocks.map(renderBlock).join('')
+      : `<div style="text-align:center;color:var(--muted);padding:60px 0">
+           <div style="font-size:36px;margin-bottom:12px">✏️</div>
+           <div>첫 번째 블록을 추가하세요</div>
+           <div style="font-size:12px;margin-top:6px">아래 "블록 추가" 버튼 클릭 또는 엔터</div>
+         </div>`;
+    // 선택된 블록 포커스
+    if (selectedId) setTimeout(() => { const el = document.getElementById(`be-${selectedId}`); if(el) el.focus(); }, 50);
+  };
+
+  return {
+    get blocks() { return blocks; },
+
+    init() { blocks = []; selectedId = null; render(); },
+    load(arr) { blocks = arr||[]; selectedId = null; render(); },
+    toHtml() { return blocks.map(blockToHtml).join('\n'); },
+
+    select(id, e) {
+      e?.stopPropagation();
+      selectedId = id;
+      render();
+    },
+
+    add(type, afterId) {
+      const b = defaultBlock(type);
+      if (afterId) {
+        const idx = blocks.findIndex(b=>b.id===afterId);
+        blocks.splice(idx+1, 0, b);
+      } else {
+        blocks.push(b);
+      }
+      selectedId = b.id;
+      render();
+    },
+
+    remove(id) {
+      blocks = blocks.filter(b=>b.id!==id);
+      selectedId = blocks.length ? blocks[blocks.length-1].id : null;
+      render();
+    },
+
+    duplicate(id) {
+      const b = blocks.find(b=>b.id===id);
+      if (!b) return;
+      const copy = JSON.parse(JSON.stringify(b));
+      copy.id = uid();
+      const idx = blocks.findIndex(b=>b.id===id);
+      blocks.splice(idx+1, 0, copy);
+      selectedId = copy.id;
+      render();
+    },
+
+    moveUp(id) {
+      const i = blocks.findIndex(b=>b.id===id);
+      if (i>0) { [blocks[i-1],blocks[i]]=[blocks[i],blocks[i-1]]; render(); }
+    },
+    moveDown(id) {
+      const i = blocks.findIndex(b=>b.id===id);
+      if (i<blocks.length-1) { [blocks[i],blocks[i+1]]=[blocks[i+1],blocks[i]]; render(); }
+    },
+
+    saveText(id, el) {
+      const b = blocks.find(b=>b.id===id);
+      if (b) { b.content = el.innerText !== undefined ? el.innerText : el.value; }
+    },
+    saveListItem(id, i, el) {
+      const b = blocks.find(b=>b.id===id);
+      if (b) b.items[i] = el.innerText;
+    },
+    saveColItem(id, i, el) {
+      const b = blocks.find(b=>b.id===id);
+      if (b) b.cols[i] = el.innerText;
+    },
+
+    setLevel(id, lv) { const b=blocks.find(b=>b.id===id); if(b){b.level=+lv; render();} },
+    setLang(id, v)   { const b=blocks.find(b=>b.id===id); if(b){b.lang=v;} },
+    setOrdered(id, v){ const b=blocks.find(b=>b.id===id); if(b){b.ordered=v; render();} },
+    setCite(id, v)   { const b=blocks.find(b=>b.id===id); if(b){b.cite=v; render();} },
+    setImageSrc(id,v){ const b=blocks.find(b=>b.id===id); if(b){b.src=v; render();} },
+    setImageAlt(id,v){ const b=blocks.find(b=>b.id===id); if(b){b.alt=v;} },
+    setImageCap(id,v){ const b=blocks.find(b=>b.id===id); if(b){b.caption=v; render();} },
+    setEmbedUrl(id,v){ const b=blocks.find(b=>b.id===id); if(b){b.url=v; render();} },
+    setEmbedCap(id,v){ const b=blocks.find(b=>b.id===id); if(b){b.caption=v;} },
+
+    addListItem(id) {
+      const b=blocks.find(b=>b.id===id);
+      if(b){ b.items.push(''); render(); setTimeout(()=>{ const el=document.getElementById(`be-${id}-${b.items.length-1}`); if(el)el.focus(); },50); }
+    },
+    removeListItem(id) {
+      const b=blocks.find(b=>b.id===id);
+      if(b && b.items.length>1){ b.items.pop(); render(); }
+    },
+
+    pickImage(id) {
+      mediaSelectCallback = (url) => { this.setImageSrc(id, url); };
+      openMediaModal();
+    },
+    promptEmbed(id) {
+      const url = prompt('URL 입력 (YouTube 또는 링크):');
+      if (url) this.setEmbedUrl(id, url);
+    },
+
+    keyNav(id, e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const idx = blocks.findIndex(b=>b.id===id);
+        const newB = defaultBlock('paragraph');
+        blocks.splice(idx+1, 0, newB);
+        selectedId = newB.id;
+        render();
+      }
+      if (e.key === 'Backspace') {
+        const b = blocks.find(b=>b.id===id);
+        if (b && !b.content && blocks.length > 1) {
+          e.preventDefault();
+          const idx = blocks.findIndex(b=>b.id===id);
+          blocks.splice(idx,1);
+          selectedId = blocks[Math.max(0,idx-1)].id;
+          render();
+        }
+      }
+    },
+
+    listKeyNav(id, i, e) {
+      const b = blocks.find(b=>b.id===id);
+      if (!b) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        b.items.splice(i+1, 0, '');
+        render();
+        setTimeout(()=>{ const el=document.getElementById(`be-${id}-${i+1}`); if(el)el.focus(); },50);
+      }
+      if (e.key === 'Backspace' && !b.items[i] && b.items.length > 1) {
+        e.preventDefault();
+        b.items.splice(i,1);
+        render();
+        setTimeout(()=>{ const el=document.getElementById(`be-${id}-${Math.max(0,i-1)}`); if(el)el.focus(); },50);
+      }
+    },
+
+    handleSlash(id, el) {
+      const txt = el.innerText;
+      if (txt === '/') { showBlockPicker(id, el); }
+    },
+
+    showPickerAfter(afterId, e) {
+      e?.stopPropagation();
+      showBlockPicker(afterId);
+    },
+
+    showTypeChanger(id) { showBlockPicker(id, null, true); },
+
+    // Drag & Drop
+    dragStart(id) { dragSrcId = id; },
+    dragOver(id, e) { e.preventDefault(); document.querySelectorAll('.bl-block').forEach(el=>el.classList.remove('bl-drag-over')); document.getElementById(`bl-${id}`)?.classList.add('bl-drag-over'); },
+    dragDropOn(id) {
+      if (!dragSrcId || dragSrcId === id) return;
+      document.querySelectorAll('.bl-block').forEach(el=>el.classList.remove('bl-drag-over'));
+      const si = blocks.findIndex(b=>b.id===dragSrcId);
+      const ti = blocks.findIndex(b=>b.id===id);
+      const [moved] = blocks.splice(si,1);
+      blocks.splice(ti,0,moved);
+      dragSrcId = null;
+      render();
+    },
+  };
+})();
+
+// ── 블록 피커 ─────────────────────────────────────────────────────
+let _pickerAfter = null;
+let _pickerChangeType = null;
+
+function showBlockPicker(afterId, triggerEl, changeType=false) {
+  _pickerAfter = afterId;
+  _pickerChangeType = changeType ? afterId : null;
+  const picker = document.getElementById('block-picker');
+  picker.style.display = 'block';
+  filterBlockTypes('');
+  pickerHL = 0;
+  const inp = document.getElementById('block-picker-search');
+  inp.value = '';
+  inp.focus();
+  // 위치 결정
+  if (triggerEl) {
+    const r = triggerEl.getBoundingClientRect();
+    const wrap = document.getElementById('block-editor-wrap').getBoundingClientRect();
+    picker.style.top = (r.bottom - wrap.top + 4) + 'px';
+    picker.style.left = Math.max(0, r.left - wrap.left) + 'px';
+    picker.style.bottom = '';
+  } else {
+    picker.style.top = 'auto';
+    picker.style.bottom = '60px';
+    picker.style.left = '60px';
+  }
+  // 버블링이 끝난 다음 frame에 리스너 등록 (picker가 즉시 닫히는 문제 방지)
+  setTimeout(() => document.addEventListener('click', closeBlockPickerOutside, {once:true}), 0);
+}
+
+function closeBlockPickerOutside(e) {
+  if (!document.getElementById('block-picker')?.contains(e.target))
+    document.getElementById('block-picker').style.display = 'none';
+}
+
+function filterBlockTypes(q) {
+  const list = document.getElementById('block-picker-list');
+  const filtered = q ? BLOCK_TYPES.filter(t => (t.label+t.type+t.desc).toLowerCase().includes(q.toLowerCase())) : BLOCK_TYPES;
+  list.innerHTML = filtered.map((t,i) =>
+    `<div class="block-picker-item" id="bpi-${i}" onclick="event.stopPropagation();pickBlockType('${t.type}')" onmouseover="this.style.background='rgba(137,180,250,.1)'" onmouseout="this.style.background=''">
+       <span style="width:24px;display:inline-block;text-align:center">${t.icon}</span>
+       <span style="font-weight:500">${t.label}</span>
+       <span style="color:var(--muted);font-size:11px;margin-left:6px">${t.desc}</span>
+     </div>`).join('') || `<div class="text-muted text-sm" style="padding:8px">일치하는 블록 없음</div>`;
+}
+
+function pickBlockType(type) {
+  document.getElementById('block-picker').style.display = 'none';
+  if (_pickerChangeType) {
+    // 타입 변경 (내용 유지)
+    const b = BE.blocks.find(b=>b.id===_pickerChangeType);
+    if (b) { const nb = Object.assign(defaultBlockTemplate(type), {id:b.id, content: b.content||''}); Object.assign(b, nb); }
+    BE.select(_pickerChangeType, null);
+  } else {
+    BE.add(type, _pickerAfter);
+  }
+}
+
+function defaultBlockTemplate(type) {
+  const b = { type };
+  if (type==='heading') { b.level=2; b.content=''; }
+  if (type==='list')    { b.items=['']; b.ordered=false; }
+  if (type==='image')   { b.src=''; b.alt=''; b.caption=''; }
+  if (type==='embed')   { b.url=''; b.caption=''; }
+  if (type==='columns') { b.cols=['','']; }
+  return b;
+}
+
+function pickerKeyNav(e) {
+  const items = document.querySelectorAll('.block-picker-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); pickerHL = Math.min(items.length-1, (pickerHL||0)+1); items.forEach((el,i)=>el.style.background=i===pickerHL?'rgba(137,180,250,.12)':''); }
+  if (e.key === 'ArrowUp')   { e.preventDefault(); pickerHL = Math.max(0, (pickerHL||0)-1); items.forEach((el,i)=>el.style.background=i===pickerHL?'rgba(137,180,250,.12)':''); }
+  if (e.key === 'Enter')     { items[pickerHL||0]?.click(); }
+  if (e.key === 'Escape')    { document.getElementById('block-picker').style.display='none'; }
+}
+let pickerHL = 0;
+
+// ── 드래그 영역 ───────────────────────────────────────────────────
+function blockDragOver(e) { e.preventDefault(); }
+function blockDrop(e) { e.preventDefault(); }
+
+// ── 에디터 모드 전환 ──────────────────────────────────────────────
+function switchEditorMode(mode) {
+  document.getElementById('editor-mode-val').value = mode;
+  document.getElementById('block-editor-wrap').style.display   = mode==='block'    ? '' : 'none';
+  document.getElementById('markdown-editor-wrap').style.display = mode==='markdown' ? '' : 'none';
+  const btnB = document.getElementById('mode-btn-block');
+  const btnM = document.getElementById('mode-btn-markdown');
+  if (mode==='block') {
+    btnB.style.background='var(--accent)'; btnB.style.color='#1e1e2e'; btnB.className='btn btn-sm';
+    btnM.style.background=''; btnM.style.color=''; btnM.className='btn btn-sm btn-ghost';
+  } else {
+    btnM.style.background='var(--accent)'; btnM.style.color='#1e1e2e'; btnM.className='btn btn-sm';
+    btnB.style.background=''; btnB.style.color=''; btnB.className='btn btn-sm btn-ghost';
+  }
+  if (mode==='block') BE.init();
+}
+
+// 캔버스 클릭 → 선택 해제
+document.addEventListener('click', (e) => {
+  const canvas = document.getElementById('block-canvas');
+  if (canvas && canvas === e.target) { BE.select(null, e); }
+});
+
+// ── 페이지 ───────────────────────────────────────────────────────────────────
+async function loadPages() {
+  const r = await api('GET', '/api/pages');
+  if (!r.ok) return;
+  document.getElementById('pages-tbody').innerHTML = (r.data.pages||[]).map(p => `
+    <tr>
+      <td><a href="#" onclick="editPage(${p.id})" style="color:var(--accent);text-decoration:none">${p.title}</a></td>
+      <td class="text-muted text-sm">${p.slug}</td>
+      <td>${statusBadge(p.status)}</td>
+      <td class="text-muted text-sm">${fmtDate(p.created_at)}</td>
+      <td><div class="flex-gap">
+        <button class="btn btn-ghost btn-xs" onclick="editPage(${p.id})">편집</button>
+        <button class="btn btn-danger btn-xs" onclick="deletePage(${p.id})">삭제</button>
+      </div></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:24px">페이지 없음</td></tr>';
+}
+
+async function editPage(id) {
+  const r = await api('GET', `/api/posts/${id}`);
+  if (!r.ok) return;
+  const p = r.data.post;
+  document.getElementById('edit-page-id').value = p.id;
+  document.getElementById('page-title').value = p.title;
+  document.getElementById('page-content').value = p.content || '';
+  document.getElementById('page-slug').value = p.slug || '';
+  document.getElementById('page-status').value = p.status || 'draft';
+  go('page-edit');
+}
+function initNewPage() {
+  document.getElementById('edit-page-id').value = '';
+  document.getElementById('page-title').value = '';
+  document.getElementById('page-content').value = '';
+  document.getElementById('page-slug').value = '';
+}
+async function savePage() {
+  const id = document.getElementById('edit-page-id').value;
+  const payload = {
+    title: document.getElementById('page-title').value,
+    content: document.getElementById('page-content').value,
+    slug: document.getElementById('page-slug').value,
+    status: document.getElementById('page-status').value,
+    post_type: 'page'
+  };
+  const r = id ? await api('POST', `/api/pages/${id}`, payload)
+               : await api('POST', '/api/pages', payload);
+  if (r.ok) { toast('저장 완료'); go('pages'); }
+  else toast('실패: '+r.error, 'err');
+}
+async function deletePage(id) {
+  if (!confirm('삭제?')) return;
+  const r = await api('POST', `/api/pages/${id}/delete`);
+  if (r.ok) { toast('삭제됨'); loadPages(); }
+}
+
+// ── 카테고리 ─────────────────────────────────────────────────────────────────
+async function loadCategories() {
+  const r = await api('GET', '/api/categories');
+  if (!r.ok) return;
+  document.getElementById('cats-tbody').innerHTML = (r.data.categories||[]).map(c => `
+    <tr>
+      <td><strong>${c.name}</strong></td>
+      <td class="text-muted text-sm">${c.slug}</td>
+      <td class="text-muted">${c.post_count||0}</td>
+      <td>${c.id==1?'<span class="text-muted text-sm">삭제 불가</span>':`<button class="btn btn-danger btn-xs" onclick="deleteCat(${c.id})">삭제</button>`}</td>
+    </tr>`).join('');
+}
+async function loadCatsForSelect() {
+  const r = await api('GET', '/api/categories');
+  if (!r.ok) return;
+  document.getElementById('post-category').innerHTML = r.data.categories.map(c =>
+    `<option value="${c.id}">${c.name}</option>`).join('');
+}
+async function createCat() {
+  const r = await api('POST', '/api/categories', {
+    name: document.getElementById('cat-name').value,
+    slug: document.getElementById('cat-slug').value,
+    description: document.getElementById('cat-desc').value
+  });
+  if (r.ok) { toast('카테고리 추가됨'); loadCategories(); }
+  else toast('실패: '+r.error, 'err');
+}
+async function deleteCat(id) {
+  if (!confirm('삭제? 해당 카테고리의 게시물은 미분류로 이동됩니다.')) return;
+  const r = await api('POST', `/api/categories/${id}/delete`);
+  if (r.ok) { toast('삭제됨'); loadCategories(); }
+}
+
+// ── 태그 ─────────────────────────────────────────────────────────────────────
+async function loadTags() {
+  const r = await api('GET', '/api/tags');
+  if (!r.ok) return;
+  document.getElementById('tags-tbody').innerHTML = (r.data.tags||[]).map(t => `
+    <tr>
+      <td><strong>${t.name}</strong></td>
+      <td class="text-muted text-sm">${t.slug}</td>
+      <td class="text-muted">${t.post_count||0}</td>
+    </tr>`).join('') || '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px">태그 없음</td></tr>';
+}
+async function createTag() {
+  const r = await api('POST', '/api/tags', {
+    name: document.getElementById('tag-name').value,
+    slug: document.getElementById('tag-slug').value
+  });
+  if (r.ok) { toast('태그 추가됨'); loadTags(); document.getElementById('tag-name').value=''; }
+  else toast('실패: '+r.error, 'err');
+}
+
+// ── 미디어 ───────────────────────────────────────────────────────────────────
+async function loadMedia() {
+  const r = await api('GET', '/api/media');
+  if (!r.ok) return;
+  const grid = document.getElementById('media-grid');
+  grid.innerHTML = (r.data.media||[]).map(m => `
+    <div class="media-item" onclick="selectMedia('${m.url}','${m.id}')">
+      <div class="media-thumb">${isImage(m.mime_type)?`<img src="${m.url}" style="width:100%;height:100%;object-fit:cover">` : fileIcon(m.mime_type)}</div>
+      <div class="media-name">${m.original_name||m.filename}</div>
+    </div>`).join('') || '<div class="text-muted">파일 없음</div>';
+}
+function isImage(mime) { return mime && mime.startsWith('image/'); }
+function fileIcon(mime) {
+  if (!mime) return '📄';
+  if (mime.startsWith('video/')) return '🎥';
+  if (mime.startsWith('audio/')) return '🎵';
+  if (mime.includes('pdf')) return '📕';
+  if (mime.includes('zip')) return '📦';
+  return '📄';
+}
+async function uploadFiles(files) {
+  for (const file of files) {
+    const prog = document.getElementById('upload-progress');
+    prog.innerHTML = `<span class="text-muted">업로드 중: ${file.name}</span>`;
+    const fd = new FormData();
+    fd.append('file', file);
+    const opts = { method:'POST', body:fd };
+    if (currentToken) opts.headers = {'Authorization':'Bearer '+currentToken};
+    const r = await fetch('/api/media/upload', opts);
+    const d = await r.json();
+    if (d.ok) { toast(`업로드 완료: ${file.name}`); loadMedia(); }
+    else toast(`업로드 실패: ${d.error}`, 'err');
+    prog.innerHTML = '';
+  }
+}
+function handleDrop(e) {
+  e.preventDefault(); document.getElementById('dropzone').classList.remove('drag-over');
+  uploadFiles(e.dataTransfer.files);
+}
+function selectMedia(url, id) {
+  if (mediaSelectCallback) { mediaSelectCallback(url); closeMediaModal(); mediaSelectCallback = null; }
+}
+function openMediaModal() {
+  const r2 = api('GET', '/api/media').then(r => {
+    document.getElementById('modal-media-grid').innerHTML = (r.data?.media||[]).map(m => `
+      <div class="media-item" onclick="mediaSelectCallback && (mediaSelectCallback('${m.url}'), closeMediaModal())">
+        <div class="media-thumb">${isImage(m.mime_type)?`<img src="${m.url}" style="width:100%;height:100%;object-fit:cover">`:fileIcon(m.mime_type)}</div>
+        <div class="media-name">${m.original_name||m.filename}</div>
+      </div>`).join('');
+  });
+  document.getElementById('media-modal').classList.add('open');
+}
+function closeMediaModal() { document.getElementById('media-modal').classList.remove('open'); }
+
+// ── 댓글 ─────────────────────────────────────────────────────────────────────
+async function loadComments(status) {
+  const r = await api('GET', `/api/comments?status=${status}`);
+  if (!r.ok) return;
+  document.getElementById('comments-list').innerHTML = (r.data.comments||[]).map(c => `
+    <div class="comment-item">
+      <div class="comment-avatar">${c.author[0].toUpperCase()}</div>
+      <div class="comment-body">
+        <div class="comment-meta">
+          <strong>${c.author}</strong> ${c.email ? `&lt;${c.email}&gt;` : ''} — ${fmtDate(c.created_at)}
+          ${c.post_title ? `<span style="margin-left:8px">📝 ${c.post_title}</span>` : ''}
+        </div>
+        <div class="comment-content">${c.content}</div>
+        <div class="comment-actions">
+          ${c.status==='pending'?`<button class="btn btn-success btn-xs" onclick="approveComment(${c.id})">✓ 승인</button>`:''}
+          <button class="btn btn-danger btn-xs" onclick="deleteComment(${c.id})">삭제</button>
+        </div>
+      </div>
+    </div>`).join('') || '<div class="text-muted" style="padding:24px;text-align:center">댓글 없음</div>';
+}
+async function approveComment(id) {
+  const r = await api('POST', `/api/comments/${id}/approve`);
+  if (r.ok) { toast('승인됨'); loadComments('pending'); }
+}
+async function deleteComment(id) {
+  if (!confirm('삭제?')) return;
+  const r = await api('POST', `/api/comments/${id}/delete`);
+  if (r.ok) { toast('삭제됨'); loadComments('pending'); }
+}
+
+// ── 사용자 ───────────────────────────────────────────────────────────────────
+async function loadUsers() {
+  const r = await api('GET', '/api/users');
+  if (!r.ok) return;
+  const roleBadge = {administrator:'badge-red',editor:'badge-yellow',author:'badge-blue',subscriber:'badge-purple'};
+  document.getElementById('users-tbody').innerHTML = (r.data.users||[]).map(u => `
+    <tr>
+      <td><strong>${u.username}</strong></td>
+      <td class="text-muted text-sm">${u.email}</td>
+      <td>${u.display_name||'-'}</td>
+      <td><span class="badge ${roleBadge[u.role]||'badge-blue'}">${u.role}</span></td>
+      <td class="text-muted text-sm">${fmtDate(u.created_at)}</td>
+      <td><button class="btn btn-danger btn-xs" onclick="deleteUser(${u.id})">삭제</button></td>
+    </tr>`).join('');
+}
+async function createUser() {
+  const r = await api('POST', '/api/users', {
+    username: document.getElementById('nu-user').value,
+    email: document.getElementById('nu-email').value,
+    display_name: document.getElementById('nu-dname').value,
+    password: document.getElementById('nu-pass').value,
+    role: document.getElementById('nu-role').value
+  });
+  if (r.ok) { toast('사용자 추가됨'); go('users'); }
+  else toast('실패: '+r.error, 'err');
+}
+async function deleteUser(id) {
+  if (!confirm('삭제?')) return;
+  const r = await api('POST', `/api/users/${id}/delete`);
+  if (r.ok) { toast('삭제됨'); loadUsers(); }
+  else toast('실패: '+r.error, 'err');
+}
+
+// ── 설정 ─────────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  const r = await api('GET', '/api/settings');
+  if (!r.ok) return;
+  const d = r.data;
+  document.getElementById('set-name').value = d.site_name || '';
+  document.getElementById('set-desc').value = d.site_description || '';
+  document.getElementById('set-url').value = d.site_url || '';
+  document.getElementById('set-per-page').value = d.posts_per_page || 10;
+  document.getElementById('set-allow-comments').checked = d.allow_comments === 'true';
+  document.getElementById('set-moderation').checked = d.comment_moderation === 'true';
+}
+async function saveSettings() {
+  const r = await api('POST', '/api/settings', {
+    site_name: document.getElementById('set-name').value,
+    site_description: document.getElementById('set-desc').value,
+    site_url: document.getElementById('set-url').value,
+    posts_per_page: document.getElementById('set-per-page').value,
+    allow_comments: document.getElementById('set-allow-comments').checked ? 'true' : 'false',
+    comment_moderation: document.getElementById('set-moderation').checked ? 'true' : 'false'
+  });
+  if (r.ok) toast('설정 저장됨');
+  else toast('실패: '+r.error, 'err');
+}
+
+// ── 유틸 ─────────────────────────────────────────────────────────────────────
+function fmtDate(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.getFullYear()+'.'+(d.getMonth()+1).toString().padStart(2,'0')+'.'+d.getDate().toString().padStart(2,'0');
+}
+
+// ── 초기화 ───────────────────────────────────────────────────────────────────
+async function initApp() {
+  loadDashboard();
+}
+
+// 자동 로그인 체크
+if (currentToken) {
+  api('GET', '/api/me').then(r => {
+    if (r.ok) {
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('user-display').textContent = '👤 ' + (r.data.display_name||r.data.username);
+      initApp();
+    } else {
+      localStorage.removeItem('flp_token');
+      currentToken = '';
+    }
+  });
+}
+</script>
+</body>
+</html>

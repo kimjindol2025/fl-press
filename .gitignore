@@ -1,0 +1,10 @@
+# SQLite 런타임 DB (실데이터)
+flpress.db
+flpress.db-shm
+flpress.db-wal
+*.db
+*.db-shm
+*.db-wal
+# fx2 컴파일 산출물
+fl-press
+node_modules/

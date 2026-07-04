@@ -1,0 +1,70 @@
+;; ── fx-std.fl (73 서버 cgc-bin 호환) ─────────────────────────────────────
+;; cgc-bin 함수명: 전부 kebab-case (server-html, db-query, process-run, ...)
+
+;; ─── 1. 문자열 유틸 ─────────────────────────────────────────────────────
+
+(defn blank? [$s]
+  (or (null? $s) (= (str-trim $s) "")))
+
+(defn str-coerce [$v]
+  (if (null? $v) "" (str $v)))
+
+;; ─── 2. HTTP 응답 헬퍼 ──────────────────────────────────────────────────
+
+;; server-json은 fl_resp_json → 내부서 fl_json_stringify 호출 — 사전 stringify 금지
+(defn ok [$data]
+  (server-json {"ok" true "data" $data}))
+
+;; err 계열: server-status body는 문자열 → json-stringify 유지
+(defn err [$msg]
+  (server-status 400 (json-stringify {"ok" false "error" $msg})))
+
+(defn err-not-found []
+  (server-status 404 (json-stringify {"ok" false "error" "Not found"})))
+
+(defn err-unauthorized []
+  (server-status 401 (json-stringify {"ok" false "error" "Unauthorized"})))
+
+;; ─── 4. 요청 헬퍼 ───────────────────────────────────────────────────────
+
+(defn get-header [$req $name]
+  (let [$hdrs  (get $req "headers")
+        $lower (str-to-lower $name)
+        $exact (get $hdrs $name)]
+    (if (not (null? $exact)) $exact
+      (reduce
+        (fn [$acc $k]
+          (if (not (null? $acc)) $acc
+            (if (= (str-to-lower $k) $lower) (get $hdrs $k) nil)))
+        nil
+        (keys $hdrs)))))
+
+(defn bearer-token [$req]
+  (let [$auth (get-header $req "authorization")]
+    (if (null? $auth) nil
+      (if (str-starts-with $auth "Bearer ")
+        (str-slice $auth 7 (length $auth))
+        nil))))
+
+;; req-param, req-body → fx2 aliases.c 내장 (중복 제거)
+
+(defn req-query [$req $name]
+  (get (get $req "query") $name))
+
+;; ─── 5. SQLite 헬퍼 ─────────────────────────────────────────────────────
+
+;; 로컬 cgc-bin 호환: fxb_sqlite_* 래퍼 (73서버는 db-query/db-exec/db-open 빌트인)
+(defn db-open [$path]
+  (fxb_sqlite_open $path))
+
+(defn db-query [$db $sql $params]
+  (fxb_sqlite_query_p $db $sql $params))
+
+(defn db-exec [$db $sql $params]
+  (fxb_sqlite_exec_p $db $sql $params))
+
+(defn db-one [$db $sql $params]
+  (let [$rows (db-query $db $sql $params)]
+    (if (= (length $rows) 0) nil (get $rows 0))))
+
+;; now-ms는 cgc-bin 빌트인: (now-ms) → fl_now_ms() — 래퍼 불필요

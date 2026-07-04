@@ -1,0 +1,14 @@
+{
+  "name": "fl-press",
+  "version": "1.0.0",
+  "language": "FreeLang fx2 (C Native)",
+  "status": "in_progress",
+  "description": "FreeLang fx2로 만든 WordPress급 CMS — 게시물/페이지/댓글/미디어/사용자/SEO/플러그인",
+  "ports": [40814],
+  "entry": "fl-press",
+  "commands": {
+    "build": "bash /home/kimjin/freelang-v11-fx2/fl-build.sh server.fl fl-press",
+    "start": "pm2 start ./fl-press --name fl-press",
+    "dev": "./fl-press"
+  }
+}
