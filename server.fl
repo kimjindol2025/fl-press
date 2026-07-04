@@ -634,6 +634,7 @@
          "<div class='wrap'>"
          "<h1 class='post-title'>" $title "</h1>"
          "<div class='post-meta'><span>✍️ " $author "</span><span class='cat-badge'>" $cat "</span></div>"
+         (if (= $img "") "" (str "<img src='" $img "' class='post-hero' style='width:100%;border-radius:8px;margin-bottom:24px;display:block'>"))
          "<div class='post-content'>" $content "</div>"
          (render-comments-html $post-id $comments)
          "</div>"
@@ -707,7 +708,7 @@
 (defn handle-upload-file [$req]
   (let [$fname (rp $req "filename")
         $fpath (str UPLOAD_DIR "/" $fname)]
-    (server_html (fl-file-read $fpath))))
+    (server-file $fpath)))
 
 ;; ═══════════════════════════════════════════════════════════
 ;;  라우트 등록
