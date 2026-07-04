@@ -160,13 +160,44 @@
 ;; ═══════════════════════════════════════════════════════════
 ;;  Markdown → HTML (간단 변환)
 ;; ═══════════════════════════════════════════════════════════
+;; 짝맞춤 인라인: delim으로 split → 안쪽(홀수) 세그먼트를 open/close로 감쌈 (토글)
+(defn md-pairs [$text $delim $open $close]
+  (nth (reduce (fn [$acc $seg]
+                 (if (nth $acc 1)
+                   (list (str (nth $acc 0) $open $seg $close) false)
+                   (list (str (nth $acc 0) $seg) true)))
+               (list "" false) (str-split $text $delim)) 0))
+
+(defn md-inline [$line]
+  (md-pairs (md-pairs $line "**" "<strong>" "</strong>") "`" "<code>" "</code>"))
+
+(defn md-line [$line]
+  (let [$t (str-trim $line)]
+    (if (str-starts-with $t "#### ") (str "<h4>" (md-inline (str-slice $t 5 (length $t))) "</h4>")
+      (if (str-starts-with $t "### ") (str "<h3>" (md-inline (str-slice $t 4 (length $t))) "</h3>")
+        (if (str-starts-with $t "## ") (str "<h2>" (md-inline (str-slice $t 3 (length $t))) "</h2>")
+          (if (str-starts-with $t "# ") (str "<h1>" (md-inline (str-slice $t 2 (length $t))) "</h1>")
+            (if (str-starts-with $t "- ") (str "<li>" (md-inline (str-slice $t 2 (length $t))) "</li>")
+              (if (= $t "") ""
+                (str "<p>" (md-inline $line) "</p>")))))))))
+
+(defn md-lines [$blk]
+  (reduce (fn [$acc $ln] (str $acc (md-line $ln))) "" (str-split $blk "\n")))
+
+;; 코드펜스 첫 줄(언어명) 제거
+(defn md-strip-lang [$blk]
+  (let [$nl (str-index-of $blk "\n")]
+    (if (< $nl 0) $blk (str-slice $blk (+ $nl 1) (length $blk)))))
+
 (defn md-to-html [$text]
   (if (null? $text) ""
-    (let [$t1 (str-replace-re $text "##\\s+" "<h2>")
-          $t2 (str-replace-re $t1  "#\\s+"  "<h1>")
-          $t3 (str-replace-re $t2  "\\*\\*" "<strong>")
-          $t4 (str-replace-re $t3  "\\*"    "<em>")]
-      (str "<div class='md'>" $t4 "</div>"))))
+    (str "<div class='md'>"
+      (nth (reduce (fn [$acc $blk]
+                     (if (nth $acc 1)
+                       (list (str (nth $acc 0) "<pre><code>" (md-strip-lang $blk) "</code></pre>") false)
+                       (list (str (nth $acc 0) (md-lines $blk)) true)))
+                   (list "" false) (str-split $text "```")) 0)
+      "</div>")))
 
 ;; slug 생성
 (defn make-slug [$title]
@@ -592,6 +623,7 @@
         $content (md-to-html (or (get $post "content") ""))
         $author  (or (get $post "author_name") "관리자")
         $cat     (or (get $post "category_name") "미분류")
+        $img     (or (get $post "featured_image") "")
         $post-id (get $post "id")]
     (str "<!DOCTYPE html><html lang='ko'><head><meta charset='UTF-8'>"
          "<meta name='viewport' content='width=device-width,initial-scale=1'>"
